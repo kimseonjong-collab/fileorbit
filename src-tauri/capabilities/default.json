@@ -1,0 +1,1 @@
+{"$schema":"../gen/schemas/desktop-schema.json","identifier":"default","description":"FileOrbit V0.1 read-only capability","windows":["main"],"permissions":["core:default","dialog:allow-open"]}
