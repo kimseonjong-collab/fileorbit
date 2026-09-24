@@ -1,0 +1,1 @@
+export type FolderStat={path:string,name:string,fileCount:number,totalBytes:number,extensions:Record<string,number>,recentModified?:number,representativeFiles:string[],keywords:string[]};export type ScanResult={root:string,scannedAt:number,folderCount:number,fileCount:number,totalBytes:number,excludedCount:number,folders:FolderStat[]};
