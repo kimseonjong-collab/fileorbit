@@ -44,7 +44,7 @@ jobs:
       - run: npm run tauri build -- --bundles msi,nsis
       - uses: actions/upload-artifact@v4
         with:
-          name: FileOrbit-v0.1.1-Windows-installers
+          name: FileOrbit-v0.3.0-Windows-installers
           path: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*-setup.exe
