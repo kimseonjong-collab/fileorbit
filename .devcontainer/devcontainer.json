@@ -1,0 +1,13 @@
+{
+  "name": "FileOrbit Web Preview",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "forwardPorts": [4173],
+  "portsAttributes": {
+    "4173": {
+      "label": "FileOrbit Web Preview",
+      "onAutoForward": "openPreview"
+    }
+  },
+  "postCreateCommand": "npm install",
+  "postStartCommand": "npm run build"
+}
