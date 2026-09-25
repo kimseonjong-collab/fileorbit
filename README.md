@@ -11,7 +11,7 @@ Local-first Windows folder analysis and download organization tool.
 - No background file moves, no scheduled file moves, no automatic deletion, no silent overwrite
 
 ## Safety baseline
-Real file moves require an approved Folder Map, explicit per-file approval, a final Move gate, and backend validation. Validation is invalidated whenever the review/classification set or Downloads scan changes, and final execution is bound to the exact validated source-target pairs. Re-approving a Folder Map invalidates earlier file approvals. File deletion and overwrite are not supported. Move/Undo activity is journaled locally, including execution-time move failures and retryable failed Undo attempts.
+Real file moves require an approved Folder Map, explicit per-file approval, a final Move gate, and backend validation. Validation is invalidated whenever the review/classification set or Downloads scan changes, and final execution is bound to the exact validated source-target pairs. Work and Downloads roots must be separate sibling-style trees; equal or nested roots are rejected in both the desktop UI and Rust backend. Re-approving a Folder Map invalidates earlier file approvals. File deletion and overwrite are not supported. Move/Undo activity is journaled locally, including execution-time move failures and retryable failed Undo attempts.
 
 ## Architecture
 - React + TypeScript UI
