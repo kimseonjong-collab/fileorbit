@@ -29,7 +29,7 @@ jobs:
       - run: cargo check --manifest-path src-tauri/Cargo.toml
   windows-installer:
     needs: [frontend, rust-check]
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
