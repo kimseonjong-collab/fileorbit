@@ -15,7 +15,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
+      - run: npm install --no-audit --no-fund
       - run: npm run build
   rust-check:
     runs-on: ubuntu-latest
@@ -41,7 +41,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: npm install
+      - run: npm install --no-audit --no-fund
       - run: npm run tauri build -- --bundles msi,nsis
       - uses: actions/upload-artifact@v4
         with:
