@@ -1,19 +1,39 @@
 # FileOrbit Architecture
 
-## Workflow
-1. Select an existing work-folder root.
-2. Perform a read-only scan.
-3. Exclude development/cache/temp/system noise.
-4. Build folder profiles from structure and file metadata.
-5. Detect ambiguous, duplicate-like, and overlapping folders.
-6. Present restructuring recommendations as Dry Run only.
-7. After user approval, persist the accepted structure as Folder Map.
-8. Scan Downloads only on demand.
-9. Match new/changed Downloads files against Folder Map.
-10. Preview; move only after explicit approval; record undo journal.
+## Product workflow
+1. User explicitly selects an existing work-folder root.
+2. Folder Doctor performs a read-only scan and excludes development/cache/temp noise.
+3. FileOrbit builds Folder Profiles from structure and metadata.
+4. Dry Run and role-based recommendations are reviewed without disk mutation.
+5. User explicitly approves the destination structure as a persistent Folder Map.
+6. Downloads Organizer scans a user-selected folder only on demand.
+7. Classification uses Folder Map keywords plus local correction feedback.
+8. User reviews each candidate and explicitly approves or holds it.
+9. Backend validates source root, approved destination root, traversal/collision conditions, and the final Move gate.
+10. Approved files are moved with a local transaction journal; history/audit and Undo remain available after restart.
 
-## V0.1 boundary
-No move, rename, delete, background watcher, startup task, scheduled task, or cloud database.
+## V0.4 safety boundary
+- No background or scheduled file move.
+- No automatic delete.
+- No silent overwrite.
+- No move without an approved Folder Map and explicit per-file approval.
+- Destination path validation is enforced again in Rust, not trusted to the UI.
+- Cross-volume fallback uses temporary copy, byte-size verification, final rename, then source removal.
+- If source removal fails during cross-volume fallback, FileOrbit attempts to roll back the created destination.
+- Undo is journal-driven and stops on collisions or missing moved files.
+- Failed Undo attempts are recorded separately and do not destroy later retry eligibility.
 
-## Local data
-SQLite stores folder profiles, scan snapshots, rules, and later undo journals. File contents are not uploaded to cloud services.
+## Local persistence
+Current runtime persistence is local only:
+- Folder Map: browser local storage.
+- Download review/override state: scoped to Folder Map root + selected Downloads root.
+- Classification feedback: scoped to the approved Folder Map.
+- Move/Undo audit: JSONL journal in the Tauri app-data directory.
+- File bodies are not uploaded.
+
+SQLite remains a future persistence option and is not required by V0.4.
+
+## Runtime surfaces
+- Web Preview: demo data only; cannot access or move PC files.
+- Windows desktop: real read-only scans and explicit Safe Move/Undo.
+- GitHub `main` is the source of truth.
