@@ -17,10 +17,11 @@
 - No automatic delete.
 - No silent overwrite.
 - No move without an approved Folder Map and explicit per-file approval.
-- Destination path validation is enforced again in Rust, not trusted to the UI.
+- Destination path validation is enforced again in Rust, not trusted to the UI. Existing target-parent paths are canonicalized so a symlink/junction-style escape outside the approved Folder Map is rejected.
 - Cross-volume fallback uses temporary copy, byte-size verification, final rename, then source removal.
 - If source removal fails during cross-volume fallback, FileOrbit attempts to roll back the created destination.
 - Undo is journal-driven and stops on collisions or missing moved files.
+- Execution-time Move failures are journaled as `failed` after a `planned` entry, preserving the audit trail when the filesystem changes after validation.
 - Failed Undo attempts are recorded separately and do not destroy later retry eligibility.
 
 ## Local persistence
