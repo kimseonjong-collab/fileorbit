@@ -7,11 +7,11 @@ Local-first Windows folder analysis and download organization tool.
 - V0.2 Folder Map: role-based destination map, approval, persistence, drift detection
 - V0.3 Downloads Organizer: explicit Downloads scan, classification, review/hold queue, local correction learning
 - V0.4 Safe Move & Undo: per-file approval, backend safety validation, journaled move, persistent history/audit, retry-safe Undo
-- Cross-volume move fallback uses temporary copy, size verification, final rename, source removal, and rollback on source-removal failure
+- Cross-volume move fallback uses temporary copy, size verification, final rename, source removal, and rollback on source-removal failure; fallback behavior is covered by Rust regression tests
 - No background file moves, no scheduled file moves, no automatic deletion, no silent overwrite
 
 ## Safety baseline
-Real file moves require an approved Folder Map, explicit per-file approval, a final Move gate, and backend validation. File deletion and overwrite are not supported. Move/Undo activity is journaled locally.
+Real file moves require an approved Folder Map, explicit per-file approval, a final Move gate, and backend validation. File deletion and overwrite are not supported. Move/Undo activity is journaled locally, including execution-time move failures and failed Undo attempts.
 
 ## Architecture
 - React + TypeScript UI
