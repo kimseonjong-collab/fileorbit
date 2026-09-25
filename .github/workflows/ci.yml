@@ -16,6 +16,10 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - name: Guard Windows GUI subsystem
+        run: grep -F 'windows_subsystem = "windows"' src-tauri/src/main.rs
+      - name: Guard release version alignment
+        run: node -e "const p=require('./package.json'),t=require('./src-tauri/tauri.conf.json'); if(p.version!==t.version) throw new Error('package.json and tauri.conf.json versions differ')"
       - run: npm run build
   rust-check:
     runs-on: ubuntu-latest
