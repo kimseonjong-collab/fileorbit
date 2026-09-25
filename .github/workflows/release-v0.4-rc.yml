@@ -1,0 +1,29 @@
+name: Publish V0.4 RC Release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  publish:
+    if: contains(github.event.head_commit.message, '[publish-v0.4-rc]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm install --no-audit --no-fund
+      - run: npm run tauri build -- --bundles msi,nsis
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v0.4.0-rc.1"
+          $notes = "FileOrbit V0.4 RC1. Folder Doctor is read-only. Real Move requires explicit review and validation. Work and Downloads roots must be separate. Existing destinations are never silently overwritten. Move/Undo history is persisted. Use disposable test files first."
+          gh release create $tag src-tauri/target/release/bundle/msi/*.msi src-tauri/target/release/bundle/nsis/*-setup.exe --target "${{ github.sha }}" --title "FileOrbit V0.4 RC1" --notes $notes --prerelease
