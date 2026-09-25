@@ -15,6 +15,8 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npm run build
+        env:
+          FILEORBIT_WEB_PREVIEW: "1"
       - name: Upload browser preview build
         uses: actions/upload-artifact@v4
         with:
