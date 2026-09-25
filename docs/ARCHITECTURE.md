@@ -17,7 +17,7 @@
 - No automatic delete.
 - No silent overwrite.
 - No move without an approved Folder Map and explicit per-file approval.
-- Destination path validation is enforced again in Rust, not trusted to the UI. Existing target-parent paths are canonicalized so a symlink/junction-style escape outside the approved Folder Map is rejected.
+- Destination path validation is enforced again in Rust, not trusted to the UI. Existing target-parent paths are canonicalized so a symlink/junction-style escape outside the approved Folder Map is rejected. Duplicate Move sources are canonicalized and Windows duplicate identity is compared case-insensitively.
 - Cross-volume fallback uses temporary copy, byte-size verification, final rename, then source removal; the fallback path is regression-tested independently of platform rename behavior.
 - If source removal fails during cross-volume fallback, FileOrbit attempts to roll back the created destination.
 - Undo is journal-driven and stops on collisions or missing moved files; the collision precheck is regression-tested so the original and moved files remain untouched.
