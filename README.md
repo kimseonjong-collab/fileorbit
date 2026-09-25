@@ -22,4 +22,4 @@ Real file moves require an approved Folder Map, explicit per-file approval, a fi
 - Google Stitch export retained as UI reference
 
 ## Development
-Routine changes run frontend/Rust CI and Web Preview Build. Windows installer generation is intentionally manual-only while V0.4 stabilization continues.
+Routine changes run frontend/Rust CI and Web Preview Build. Desktop bundles use relative frontend asset paths; Web Preview uses its repository base path explicitly. Windows installer generation is intentionally manual-only while V0.4 stabilization continues.
