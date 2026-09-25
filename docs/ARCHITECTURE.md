@@ -27,7 +27,7 @@
 ## Local persistence
 Current runtime persistence is local only:
 - Folder Map: browser local storage.
-- Download review/override state: scoped to Folder Map root + selected Downloads root.
+- Download review/override state: scoped to Folder Map approval version (`approvedAt`) + Folder Map root + selected Downloads root; re-approving the map invalidates stale per-file approval state.
 - Classification feedback: scoped to the approved Folder Map.
 - Move/Undo audit: JSONL journal in the Tauri app-data directory.
 - File bodies are not uploaded.
