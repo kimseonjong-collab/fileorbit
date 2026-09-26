@@ -19,6 +19,8 @@ jobs:
           node-version: 22
       - run: node --version && npm --version
       - run: npm install --no-audit --no-fund
+      - name: Verify generated npm lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund && node -e "const p=require('./package-lock.json'); if(p.lockfileVersion!==3) throw new Error('unexpected npm lockfile version')"
       - name: Guard exact direct dependency versions
         run: |
           node -e "const p=require('./package.json'); for(const [n,v] of Object.entries({...p.dependencies,...p.devDependencies})) if(/[~^*xX><=| ]/.test(v)) throw new Error(n + ' is not exactly pinned: ' + v)"
@@ -47,9 +49,8 @@ jobs:
           workspaces: src-tauri
       - run: rustc --version && cargo --version
       - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - name: Report Rust lockfile status
-        run: |
-          if [ -f src-tauri/Cargo.lock ]; then echo "Cargo.lock present"; else echo "::notice::Cargo.lock is not committed; Rust transitive dependencies may resolve differently between builds."; fi
+      - name: Verify generated Rust lockfile
+        run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml && test -s src-tauri/Cargo.lock
       - run: cargo check --manifest-path src-tauri/Cargo.toml
       - run: cargo test --manifest-path src-tauri/Cargo.toml
   windows-installer:
