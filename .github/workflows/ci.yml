@@ -107,6 +107,24 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify UAT fixture fail-closed guards
+        shell: pwsh
+        run: |
+          $outside = Join-Path $env:GITHUB_WORKSPACE "FileOrbit-UAT"
+          try { ./scripts/new-v05-uat-fixture.ps1 -Root $outside; throw "Outside-TEMP creation unexpectedly succeeded." } catch {
+            if ($_.Exception.Message -eq "Outside-TEMP creation unexpectedly succeeded.") { throw }
+          }
+          $wrong = Join-Path $env:TEMP "Not-FileOrbit-UAT"
+          try { ./scripts/new-v05-uat-fixture.ps1 -Root $wrong; throw "Wrong-name creation unexpectedly succeeded." } catch {
+            if ($_.Exception.Message -eq "Wrong-name creation unexpectedly succeeded.") { throw }
+          }
+          $fake = Join-Path $env:TEMP "FileOrbit-UAT"
+          New-Item -ItemType Directory -Path $fake -Force | Out-Null
+          try { ./scripts/remove-v05-uat-fixture.ps1 -Root $fake; throw "Manifest-less cleanup unexpectedly succeeded." } catch {
+            if ($_.Exception.Message -eq "Manifest-less cleanup unexpectedly succeeded.") { throw }
+          }
+          if (-not (Test-Path $fake)) { throw "Guard test directory was unexpectedly removed." }
+          Remove-Item -LiteralPath $fake -Recurse -Force
       - name: Create disposable UAT fixture
         shell: pwsh
         run: ./scripts/new-v05-uat-fixture.ps1
