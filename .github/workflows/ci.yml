@@ -43,6 +43,9 @@ jobs:
         with:
           workspaces: src-tauri
       - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Report Rust lockfile status
+        run: |
+          if [ -f src-tauri/Cargo.lock ]; then echo "Cargo.lock present"; else echo "::notice::Cargo.lock is not committed; Rust transitive dependencies may resolve differently between builds."; fi
       - run: cargo check --manifest-path src-tauri/Cargo.toml
       - run: cargo test --manifest-path src-tauri/Cargo.toml
   windows-installer:
