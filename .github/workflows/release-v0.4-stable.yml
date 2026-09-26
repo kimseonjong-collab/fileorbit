@@ -1,0 +1,30 @@
+name: Publish V0.4 Stable Release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  publish:
+    if: contains(github.event.head_commit.message, '[publish-v0.4-stable]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: src-tauri
+      - run: npm ci --no-audit --no-fund
+      - run: npm run tauri build -- --bundles msi,nsis
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v0.4.0"
+          if (gh release view $tag 2>$null) { throw "Stable release $tag already exists; refusing to overwrite or retarget it." }
+          $notes = "FileOrbit V0.4 stable. Windows runtime acceptance passed on RC6: approved Folder Map persisted, two-file Move completed 2/2, Undo completed 2/2, Move/Undo failures were 0, and journal/history restored after full app restart. V0.4 keeps Folder Doctor read-only, requires explicit review plus backend validation before real Move, never silently overwrites destinations, persists Move/Undo audit history, and does not perform automatic/background moves or deletion."
+          gh release create $tag src-tauri/target/release/bundle/msi/*.msi src-tauri/target/release/bundle/nsis/*-setup.exe --target "${{ github.sha }}" --title "FileOrbit V0.4" --notes $notes
