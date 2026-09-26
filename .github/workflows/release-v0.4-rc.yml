@@ -24,6 +24,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.4.0-rc.5"
-          $notes = "FileOrbit V0.4 RC5. RC5 checkpoint: Downloads route only to approved Folder Map paths; Windows canonical target containment is fixed; primary navigation modes are isolated. Folder Doctor is read-only. Real Move requires explicit review and validation. Work and Downloads roots must be separate. Existing destinations are never silently overwritten. Move/Undo history is persisted. Use disposable test files first."
-          gh release create $tag src-tauri/target/release/bundle/msi/*.msi src-tauri/target/release/bundle/nsis/*-setup.exe --target "${{ github.sha }}" --title "FileOrbit V0.4 RC5" --notes $notes --prerelease
+          $tag = "v0.4.0-rc.6"
+          $notes = "FileOrbit V0.4 RC6. RC6 checkpoint: includes the RC5 Windows-validated path plus strict journal corruption handling, Move/Undo audit compensation, deterministic History/Undo state, atomic History snapshot, committed npm/Cargo lockfiles, pinned Rust 1.98.1 and Action SHAs, and serialized in-process journal mutation. Folder Doctor remains read-only; real Move still requires explicit review and validation. Use disposable test files first."
+          gh release create $tag src-tauri/target/release/bundle/msi/*.msi src-tauri/target/release/bundle/nsis/*-setup.exe --target "${{ github.sha }}" --title "FileOrbit V0.4 RC6" --notes $notes --prerelease
