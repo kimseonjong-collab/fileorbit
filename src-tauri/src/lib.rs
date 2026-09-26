@@ -5,7 +5,7 @@ use serde::{Deserialize,Serialize};use std::{collections::{HashMap,HashSet},fs::
 #[derive(Serialize)]#[serde(rename_all="camelCase")]struct HistoryDetail{transaction_id:String,entries:Vec<JournalEntry>}
 #[derive(Serialize)]#[serde(rename_all="camelCase")]struct HistoryItem{transaction_id:String,timestamp:u64,moved:u64,undone:u64,failed:u64,undo_failed:u64,can_undo:bool}
 #[derive(Serialize)]#[serde(rename_all="camelCase")]struct MoveExecution{transaction_id:String,moved:u64,failed:u64,results:Vec<MoveValidation>}
-#[derive(Serialize,Deserialize,Clone)]#[serde(rename_all="camelCase")]struct JournalEntry{transaction_id:String,timestamp:u64,source:String,target:String,status:String,error:Option<String>}
+#[derive(Serialize,Deserialize,Clone,Debug)]#[serde(rename_all="camelCase")]struct JournalEntry{transaction_id:String,timestamp:u64,source:String,target:String,status:String,error:Option<String>}
 #[derive(Serialize)]#[serde(rename_all="camelCase")]struct MoveValidation{source:String,target:String,ok:bool,reason:String}
 #[derive(Serialize)]#[serde(rename_all="camelCase")]struct ScanResult{root:String,scanned_at:u64,folder_count:u64,file_count:u64,total_bytes:u64,excluded_count:u64,folders:Vec<FolderStat>}
 fn excluded(name:&str)->bool{matches!(name.to_ascii_lowercase().as_str(),"node_modules"|".git"|".svn"|".hg"|"target"|"dist"|"build"|".next"|".vite"|"cache"|".cache"|"temp"|"tmp"|"__pycache__"|"windows"|"program files"|"program files (x86)"|"$recycle.bin"|"system volume information")}
