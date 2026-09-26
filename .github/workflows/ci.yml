@@ -50,6 +50,15 @@ jobs:
           grep -F 'base: process.env.FILEORBIT_WEB_PREVIEW === "1" ? "/fileorbit/" : "./"' vite.config.ts
           grep -F 'disabled={validation.length!==approvedDownloads.length||!approvedDownloads.length||validation.some(v=>!v.ok)}' src/App.tsx
           grep -F '?"승인 파일 이동 실행":"이동 계획 안전검증"' src/App.tsx
+      - name: Guard Folder Map persistence and fail-closed restore
+        run: |
+          grep -F 'const storageKey="fileorbit.folderMap.v02"' src/App.tsx
+          grep -F 'localStorage.getItem(storageKey)' src/App.tsx
+          grep -F 'setSavedMap(m);setApproved(true)' src/App.tsx
+          grep -F 'localStorage.setItem(storageKey,JSON.stringify(m))' src/App.tsx
+          grep -F 'if(s.mapRoot===mapRoot&&s.mapApprovedAt===mapApprovedAt&&s.downloadRoot===downloadRoot)setDecisions' src/App.tsx
+          grep -F 'if(s.mapRoot===mapRoot&&s.mapApprovedAt===mapApprovedAt&&s.downloadRoot===downloadRoot)setRoleOverrides' src/App.tsx
+          grep -F 'setValidation([]);setMoveArmed(false)' src/App.tsx
       - run: npm run build
   rust-check:
     runs-on: ubuntu-latest
