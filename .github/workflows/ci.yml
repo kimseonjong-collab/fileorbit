@@ -17,7 +17,8 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - name: Guard exact direct dependency versions
-        run: node -e "const p=require('./package.json'); for(const [n,v] of Object.entries({...p.dependencies,...p.devDependencies})) if(/[~^*xX><=| ]/.test(v)) throw new Error(`${n} is not exactly pinned: ${v}`)"
+        run: |
+          node -e "const p=require('./package.json'); for(const [n,v] of Object.entries({...p.dependencies,...p.devDependencies})) if(/[~^*xX><=| ]/.test(v)) throw new Error(n + ' is not exactly pinned: ' + v)"
       - name: Guard Windows GUI subsystem
         run: grep -F 'windows_subsystem = "windows"' src-tauri/src/main.rs
       - name: Guard release version alignment
