@@ -17,7 +17,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - run: npm run tauri build -- --bundles msi,nsis
       - name: Publish GitHub Release
         shell: pwsh
