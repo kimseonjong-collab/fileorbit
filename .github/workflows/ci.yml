@@ -22,6 +22,18 @@ jobs:
       - name: Guard exact direct dependency versions
         run: |
           node -e "const p=require('./package.json'); for(const [n,v] of Object.entries({...p.dependencies,...p.devDependencies})) if(/[~^*xX><=| ]/.test(v)) throw new Error(n + ' is not exactly pinned: ' + v)"
+      - name: Guard reproducible workflow dependencies
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          for(const p of ['.github/workflows/ci.yml','.github/workflows/web-preview.yml','.github/workflows/release-v0.4-rc.yml']){
+            const s=fs.readFileSync(p,'utf8');
+            if(/uses:\s+[^\s]+@(v\d+|stable)\b/.test(s)) throw new Error(p+' contains floating Action ref');
+            if(/npm install --no-audit --no-fund/.test(s)) throw new Error(p+' regressed from npm ci');
+          }
+          NODE
+          test -s package-lock.json
+          test -s src-tauri/Cargo.lock
       - name: Guard Windows GUI subsystem
         run: grep -F 'windows_subsystem = "windows"' src-tauri/src/main.rs
       - name: Guard release version alignment
