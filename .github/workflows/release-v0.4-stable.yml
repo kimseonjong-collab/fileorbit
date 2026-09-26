@@ -6,7 +6,8 @@ permissions:
   contents: write
 jobs:
   publish:
-    if: contains(github.event.head_commit.message, '[publish-v0.4-stable]')
+    if: false # V0.4 release line is immutable; disabled on V0.5 main
+    # historical trigger: contains(github.event.head_commit.message, '[publish-v0.4-stable]')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
