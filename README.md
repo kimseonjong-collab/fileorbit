@@ -23,3 +23,8 @@ Real file moves require an approved Folder Map, explicit per-file approval, a fi
 
 ## Development
 Routine changes run frontend/Rust CI and Web Preview Build. Desktop bundles use relative frontend asset paths; Web Preview uses its repository base path explicitly. Windows installer generation is intentionally manual-only while V0.4 stabilization continues.
+
+
+## V0.4 Windows acceptance checkpoint
+
+RC5 completed the disposable-file Windows runtime path on 2026-09-26: approved Folder Map routing, 2/2 safety validation, two-file Move, persisted journal history, two-file Undo, zero Move/Undo failures, and history restoration after app restart. Routine source hardening after this checkpoint is covered by CI; Windows installers remain explicit checkpoint builds only.
