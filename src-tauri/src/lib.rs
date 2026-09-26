@@ -1,7 +1,7 @@
 use serde::{Deserialize,Serialize};use std::{collections::{HashMap,HashSet},fs::OpenOptions,io::Write,path::{Component,Path},time::{SystemTime,UNIX_EPOCH}};use tauri::Manager;use walkdir::WalkDir;
 #[derive(Serialize,Clone)]#[serde(rename_all="camelCase")]struct FolderStat{path:String,name:String,file_count:u64,total_bytes:u64,extensions:HashMap<String,u64>,recent_modified:Option<u64>,representative_files:Vec<String>,keywords:Vec<String>}
 #[derive(Serialize)]#[serde(rename_all="camelCase")]struct DownloadFile{name:String,path:String,size:u64,modified:Option<u64>}
-#[derive(Deserialize,Clone)]#[serde(rename_all="camelCase")]struct MovePlanItem{expected_size:None,expected_modified:None,source:String,target:String,expected_size:Option<u64>,expected_modified:Option<u64>}
+#[derive(Deserialize,Clone)]#[serde(rename_all="camelCase")]struct MovePlanItem{source:String,target:String,expected_size:Option<u64>,expected_modified:Option<u64>}
 #[derive(Serialize)]#[serde(rename_all="camelCase")]struct HistoryDetail{transaction_id:String,entries:Vec<JournalEntry>}
 #[derive(Serialize)]#[serde(rename_all="camelCase")]struct HistoryItem{transaction_id:String,timestamp:u64,moved:u64,undone:u64,failed:u64,undo_failed:u64,can_undo:bool}
 #[derive(Serialize)]#[serde(rename_all="camelCase")]struct MoveExecution{transaction_id:String,moved:u64,failed:u64,results:Vec<MoveValidation>}
