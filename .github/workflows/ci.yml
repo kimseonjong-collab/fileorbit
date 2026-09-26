@@ -40,6 +40,13 @@ jobs:
         run: grep -F 'windows_subsystem = "windows"' src-tauri/src/main.rs
       - name: Guard release version alignment
         run: node -e "const p=require('./package.json'),t=require('./src-tauri/tauri.conf.json'); if(p.version!==t.version) throw new Error('package.json and tauri.conf.json versions differ')"
+      - name: Guard runtime remains identical to frozen RC2
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin tag v0.5.0-rc.2 || git fetch --tags --force
+          for p in package.json package-lock.json vite.config.ts src/App.tsx src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/src/lib.rs src-tauri/src/main.rs; do
+            test "$(git rev-parse "v0.5.0-rc.2:$p")" = "$(git rev-parse "HEAD:$p")" || { echo "Runtime drift from frozen RC2: $p"; exit 1; }
+          done
       - name: Guard frozen V0.5 installed-GUI checkpoint
         run: |
           grep -F 'v0.5.0-rc.2' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
