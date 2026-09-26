@@ -18,13 +18,13 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci --no-audit --no-fund
-      - run: npm run tauri build -- --bundles msi,nsis
+      - name: Run Rust tests on Windows\n        run: cargo test --locked --manifest-path src-tauri/Cargo.toml\n      - run: npm run tauri build -- --bundles msi,nsis
       - name: Publish GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.5.0-rc.1"
+          $tag = "v0.5.0-rc.2"
           if (gh release view $tag 2>$null) { throw "Release $tag already exists; refusing to overwrite or retarget an existing checkpoint." }
-          $notes = "FileOrbit V0.5 RC1 Windows runtime checkpoint. V0.4 stable remains immutable. V0.5 adds journal export, routing/readiness diagnostics, destination conflict and Windows-name guards, stronger Move/Undo state invalidation, pre-journal batch revalidation, and clearer partial outcomes. No automatic/background moves, deletion, silent overwrite, or automatic journal compaction. Validate with disposable files first."
-          gh release create $tag src-tauri/target/release/bundle/msi/*.msi src-tauri/target/release/bundle/nsis/*-setup.exe --target "${{ github.sha }}" --title "FileOrbit V0.5 RC1" --notes $notes --prerelease
+          $notes = "FileOrbit V0.5 RC2 hardened Windows checkpoint. RC2 includes the post-RC1 Windows traversal regression fix, disposable Move-History-Undo-reload roundtrip coverage, and Folder Map persistence/fail-closed restore CI guards. V0.4 stable remains immutable. V0.5 adds journal export, routing/readiness diagnostics, destination conflict and Windows-name guards, stronger Move/Undo state invalidation, pre-journal batch revalidation, and clearer partial outcomes. No automatic/background moves, deletion, silent overwrite, or automatic journal compaction. Validate with disposable files first."
+          gh release create $tag src-tauri/target/release/bundle/msi/*.msi src-tauri/target/release/bundle/nsis/*-setup.exe --target "${{ github.sha }}" --title "FileOrbit V0.5 RC2" --notes $notes --prerelease
