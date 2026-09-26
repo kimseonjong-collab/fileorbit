@@ -27,4 +27,4 @@ Routine changes run frontend/Rust CI and Web Preview Build. Desktop bundles use 
 
 ## V0.4 Windows acceptance checkpoint
 
-RC5 completed the disposable-file Windows runtime path on 2026-09-26: approved Folder Map routing, 2/2 safety validation, two-file Move, persisted journal history, two-file Undo, zero Move/Undo failures, and history restoration after app restart. Routine source hardening after this checkpoint is covered by CI; Windows installers remain explicit checkpoint builds only.
+RC6 completed the consolidated disposable-file Windows runtime path on 2026-09-26: approved Folder Map persistence, two-file Move, persisted journal history, two-file Undo, zero Move/Undo failures, and full history restoration after app restart. RC6 also includes the post-RC5 journal-integrity, audit-compensation, atomic History, dependency-locking, Action-pinning, and in-process mutation-serialization hardening. Routine source hardening after this checkpoint is covered by CI; Windows installers remain explicit checkpoint builds only.
