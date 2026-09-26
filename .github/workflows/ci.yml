@@ -26,7 +26,7 @@ jobs:
         run: |
           node - <<'NODE'
           const fs=require('fs');
-          for(const p of ['.github/workflows/ci.yml','.github/workflows/web-preview.yml','.github/workflows/release-v0.4-rc.yml','.github/workflows/release-v0.4-stable.yml']){
+          for(const p of ['.github/workflows/ci.yml','.github/workflows/web-preview.yml','.github/workflows/release-v0.4-rc.yml','.github/workflows/release-v0.4-stable.yml','.github/workflows/release-v0.5-rc.yml']){
             const s=fs.readFileSync(p,'utf8');
             const uses=s.split(/\r?\n/).filter(line=>/^\s*- uses:\s+/.test(line));
             if(uses.some(line=>/@(v\d+|stable)\s*$/.test(line))) throw new Error(p+' contains floating Action ref');
@@ -77,10 +77,12 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci --no-audit --no-fund
+      - name: Run Rust tests on Windows
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - run: npm run tauri build -- --bundles msi,nsis
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: FileOrbit-v0.4.0-Windows-installers
+          name: FileOrbit-v0.5.0-RC1-Windows-installers
           path: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*-setup.exe
