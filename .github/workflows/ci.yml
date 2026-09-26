@@ -30,7 +30,8 @@ jobs:
             const s=fs.readFileSync(p,'utf8');
             const uses=s.split(/\r?\n/).filter(line=>/^\s*- uses:\s+/.test(line));
             if(uses.some(line=>/@(v\d+|stable)\s*$/.test(line))) throw new Error(p+' contains floating Action ref');
-            if(/npm install --no-audit --no-fund/.test(s)) throw new Error(p+' regressed from npm ci');
+            const runs=s.split(/\r?\n/).filter(line=>/^\s*- run:\s+/.test(line));
+            if(runs.some(line=>/npm install --no-audit --no-fund\s*$/.test(line))) throw new Error(p+' regressed from npm ci');
           }
           NODE
           test -s package-lock.json
