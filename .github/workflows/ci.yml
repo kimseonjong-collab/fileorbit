@@ -40,6 +40,18 @@ jobs:
         run: grep -F 'windows_subsystem = "windows"' src-tauri/src/main.rs
       - name: Guard release version alignment
         run: node -e "const p=require('./package.json'),t=require('./src-tauri/tauri.conf.json'); if(p.version!==t.version) throw new Error('package.json and tauri.conf.json versions differ')"
+      - name: Guard legacy release triggers against current V0.5 source
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const pkg=require('./package.json');
+          if(pkg.version.startsWith('0.5.')){
+            for(const p of ['.github/workflows/release-v0.4-rc.yml','.github/workflows/release-v0.4-stable.yml']){
+              const s=fs.readFileSync(p,'utf8');
+              if(!s.includes('if: false')) throw new Error(p+' must be disabled while main is V0.5');
+            }
+          }
+          NODE
       - name: Guard approved Folder Map routing
         run: |
           grep -F 'mapTarget?.sources.length===1?mapTarget.sources[0]' src/App.tsx
