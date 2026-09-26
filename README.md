@@ -2,11 +2,12 @@
 
 Local-first Windows folder analysis and download organization tool.
 
-## Current scope · V0.4
+## Current scope · V0.5 RC2
 - V0.1 Folder Doctor: explicit work-root selection and read-only analysis
 - V0.2 Folder Map: role-based destination map, approval, persistence, drift detection
 - V0.3 Downloads Organizer: explicit Downloads scan, classification, review/hold queue, local correction learning
 - V0.4 Safe Move & Undo: per-file approval, backend safety validation, journaled move, persistent history/audit, retry-safe Undo
+- V0.5 RC2: journal export, routing/readiness diagnostics, destination-conflict and Windows-name guards, stronger Move/Undo invalidation, pre-journal revalidation, and clearer partial outcomes
 - Cross-volume move fallback uses temporary copy, size verification, final rename, source removal, and rollback on source-removal failure; fallback behavior is covered by Rust regression tests
 - No background file moves, no scheduled file moves, no automatic deletion, no silent overwrite
 
@@ -22,9 +23,14 @@ Real file moves require an approved Folder Map, explicit per-file approval, a fi
 - Google Stitch export retained as UI reference
 
 ## Development
-Routine changes run frontend/Rust CI and Web Preview Build. Desktop bundles use relative frontend asset paths; Web Preview uses its repository base path explicitly. Windows installer generation is intentionally manual-only while V0.4 stabilization continues.
+Routine changes run frontend/Rust CI and Web Preview Build. Desktop bundles use relative frontend asset paths; Web Preview uses its repository base path explicitly. V0.5 RC publication is explicit-trigger only and runs Windows Rust tests before MSI/NSIS creation. V0.4 publishers are disabled on V0.5 main; V0.5 stable remains blocked until the installed-GUI runtime checkpoint passes.
 
 
 ## V0.4 Windows acceptance checkpoint
 
 RC6 completed the consolidated disposable-file Windows runtime path on 2026-09-26: approved Folder Map persistence, two-file Move, persisted journal history, two-file Undo, zero Move/Undo failures, and full history restoration after app restart. RC6 also includes the post-RC5 journal-integrity, audit-compensation, atomic History, dependency-locking, Action-pinning, and in-process mutation-serialization hardening. Routine source hardening after this checkpoint is covered by CI; Windows installers remain explicit checkpoint builds only.
+
+
+## V0.5 RC2 checkpoint
+
+RC2 is the frozen installed-GUI checkpoint binary. It targets commit `5171d465137a724a1d76eae1354478b10fc3560f`; post-RC2 main changes are release-workflow/documentation hardening only and do not change application runtime code. Automated Windows coverage includes the disposable Move → History → journal reload → Undo → journal reload roundtrip. Stable release remains intentionally unauthorized until the installed GUI checklist in `docs/V0.5_PLAN.md` is completed with disposable files.
