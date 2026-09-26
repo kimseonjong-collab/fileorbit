@@ -47,6 +47,11 @@ jobs:
           for p in package.json package-lock.json vite.config.ts src/App.tsx src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/src/lib.rs src-tauri/src/main.rs; do
             test "$(git rev-parse "v0.5.0-rc.2:$p")" = "$(git rev-parse "HEAD:$p")" || { echo "Runtime drift from frozen RC2: $p"; exit 1; }
           done
+      - name: Guard V0.5 stable remains unauthorized
+        run: |
+          grep -F 'Status: **NOT YET ACCEPTED**' docs/V0.5_WINDOWS_ACCEPTANCE.md
+          grep -F 'V0.5_STABLE_AUTHORIZED=false' docs/V0.5_WINDOWS_ACCEPTANCE.md
+          test ! -e .github/workflows/release-v0.5-stable.yml
       - name: Guard frozen V0.5 installed-GUI checkpoint
         run: |
           grep -F 'v0.5.0-rc.2' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
