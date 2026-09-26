@@ -24,6 +24,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.4.0-rc.3"
-          $notes = "FileOrbit V0.4 RC3. Navigation fix: Home and Folder Analysis now leave Downloads/History modes correctly. Folder Doctor is read-only. Real Move requires explicit review and validation. Work and Downloads roots must be separate. Existing destinations are never silently overwritten. Move/Undo history is persisted. Use disposable test files first."
-          gh release create $tag src-tauri/target/release/bundle/msi/*.msi src-tauri/target/release/bundle/nsis/*-setup.exe --target "${{ github.sha }}" --title "FileOrbit V0.4 RC3" --notes $notes --prerelease
+          $tag = "v0.4.0-rc.4"
+          $notes = "FileOrbit V0.4 RC4. Navigation fix: Home and Folder Analysis now leave Downloads/History modes correctly. Folder Doctor is read-only. Real Move requires explicit review and validation. Work and Downloads roots must be separate. Existing destinations are never silently overwritten. Move/Undo history is persisted. Use disposable test files first."
+          gh release create $tag src-tauri/target/release/bundle/msi/*.msi src-tauri/target/release/bundle/nsis/*-setup.exe --target "${{ github.sha }}" --title "FileOrbit V0.4 RC4" --notes $notes --prerelease
