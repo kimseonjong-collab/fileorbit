@@ -40,6 +40,13 @@ jobs:
         run: grep -F 'windows_subsystem = "windows"' src-tauri/src/main.rs
       - name: Guard release version alignment
         run: node -e "const p=require('./package.json'),t=require('./src-tauri/tauri.conf.json'); if(p.version!==t.version) throw new Error('package.json and tauri.conf.json versions differ')"
+      - name: Guard frozen V0.5 installed-GUI checkpoint
+        run: |
+          grep -F 'v0.5.0-rc.2' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
+          grep -F '5171d465137a724a1d76eae1354478b10fc3560f' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
+          grep -F '6c27e0f25382f6ceb673f3c4775fad87e992e2c71d304081682e12800e368e5f' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
+          grep -F '43a9d0d6e125f91333dd88087412720a37588c6ad1b7cf8aa3823e8f460ec780' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
+          grep -F 'V0.5 stable remains **BLOCKED**' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
       - name: Guard legacy release triggers against current V0.5 source
         run: |
           node - <<'NODE'
