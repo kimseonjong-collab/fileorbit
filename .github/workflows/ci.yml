@@ -103,6 +103,28 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+  windows-uat-fixture:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Create disposable UAT fixture
+        shell: pwsh
+        run: ./scripts/new-v05-uat-fixture.ps1
+      - name: Verify synthetic fixture
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:TEMP "FileOrbit-UAT"
+          $m = Get-Content (Join-Path $root "fixture.json") -Raw | ConvertFrom-Json
+          if ($m.synthetic_only -ne $true) { throw "Fixture is not marked synthetic." }
+          if (-not (Test-Path (Join-Path $root "Downloads/project-note.txt"))) { throw "Synthetic file missing." }
+          if (-not (Test-Path (Join-Path $root "Work/Projects"))) { throw "Synthetic Work folder missing." }
+      - name: Remove disposable UAT fixture
+        shell: pwsh
+        run: ./scripts/remove-v05-uat-fixture.ps1
+      - name: Verify cleanup
+        shell: pwsh
+        run: |
+          if (Test-Path (Join-Path $env:TEMP "FileOrbit-UAT")) { throw "Fixture cleanup failed." }
   windows-installer:
     needs: [frontend, rust-check]
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[windows-checkpoint]'))
