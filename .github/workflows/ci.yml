@@ -153,6 +153,8 @@ jobs:
           grep -F 'if(s.mapRoot===mapRoot&&s.mapApprovedAt===mapApprovedAt&&s.downloadRoot===downloadRoot)setRoleOverrides' src/App.tsx
           grep -F 'setValidation([]);setMoveArmed(false)' src/App.tsx
       - run: npm run build
+      - name: Verify disposable SQLite index schema
+        run: python3 scripts/test-index-schema.py -v
   rust-check:
     runs-on: ubuntu-latest
     steps:
