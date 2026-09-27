@@ -59,7 +59,7 @@ fn safe_test_root(value: &str) -> Result<PathBuf, String> {
         }
     }
     #[cfg(windows)]
-    if root == Path::new(r"C:\FileOrbit") {
+    if root.to_string_lossy().eq_ignore_ascii_case(r"C:\FileOrbit") {
         return Err("실제 표준 경로는 Test Root로 사용할 수 없습니다".into());
     }
     Ok(root)
@@ -117,5 +117,11 @@ mod tests {
         assert!(bootstrap_test_root("relative", true).is_err());
         let value = std::env::temp_dir().join("..").join("unsafe");
         assert!(bootstrap_test_root(&value.to_string_lossy(), true).is_err());
+    }
+    #[cfg(windows)]
+    #[test]
+    fn rejects_actual_standard_root_with_case_variation() {
+        assert!(bootstrap_test_root(r"C:\FileOrbit", true).is_err());
+        assert!(bootstrap_test_root(r"c:\fileorbit", true).is_err());
     }
 }
