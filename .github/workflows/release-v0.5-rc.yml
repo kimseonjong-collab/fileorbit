@@ -6,7 +6,7 @@ permissions:
   contents: write
 jobs:
   publish:
-    if: contains(github.event.head_commit.message, '[publish-v0.5-rc3]')
+    if: false # V0.5 RC3 is frozen after Stable promotion
     # historical trigger: contains(github.event.head_commit.message, '[publish-v0.5-rc]')
     runs-on: windows-latest
     steps:
