@@ -8,6 +8,7 @@
 | 4 Downloads Inbox | Synthetic index discovery implemented | PASS in same CI | Upstream manual gate pending | No automatic move; not ACCEPTED |
 | 5 Candidate Engine | Deterministic SQLite-only search implemented | PASS in same CI | Upstream manual gate pending | Candidates only; not ACCEPTED |
 | 6 Google Sheet Workspace | [FileOrbit_AI_Workspace](https://docs.google.com/spreadsheets/d/1HWdkfe0QO7Dtvppq4WFc4oAEyPapnov0Qn0v0W9Th7I/edit) created; Test Root export and preview model | PASS in same CI | Upstream manual gate pending | SQLite remains source of truth; live sync not connected; not ACCEPTED |
+| 7 Five-stage Cockpit | Test Root Observe/Review/Decide/Preview/Verify slice in progress | Frontend local build PASS, CI PENDING | Upstream manual gate pending | No Execute action wired |
 
 ## Current Phase 3 slice
 
@@ -22,6 +23,7 @@
 - Phase 6 sync slice in progress: a provider-neutral inbox adapter plans stable-ID upserts against a bounded Sheet snapshot, preserves review text, rejects duplicate IDs, and flags path or reviewed-metadata conflicts. The in-memory provider verifies retries; no app OAuth or live API call is wired. Sheet timezone was changed from `America/Los_Angeles` to `Asia/Seoul` and read back; timestamps still need an explicit UTC wire contract.
 - Phase 6 correction slice in progress: schema v4 stores normalized `MOVE`/`HOLD` corrections in a transaction after Test Root path, live metadata snapshot, revision, destination and duplicate checks. It records proposals only; Sheet text never executes a filesystem command. The `Corrections` tab now includes snapshot size, nanosecond timestamp (decimal text) and revision headers; live import transport is still pending.
 - Phase 6 candidate sync slice in progress: indexed candidates produce stable-ID `Candidates` rows with score basis points and evidence. Planning repeats without duplicate rows and rejects duplicate remote IDs; no live Google transport is wired.
+- Phase 7 UI slice in progress: existing Index panel now separates Observe, Review, Decide, Execute preview, Verify/Undo. A synthetic selection can submit a normalized HOLD/MOVE proposal with exact nanosecond snapshot text, read saved proposals after restart, and display dry-run validation. There is no execution button in this slice.
 - CI [36308475990](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36308475990) passed frontend, Linux and Windows Rust tests, Windows fixture, MSI and NSIS. Phase 2 **MANUAL_WINDOWS_E2E_PENDING** remains the upstream manual gate; installed-app interactive test was not run by CI.
 - Commits: Phase 3 `ee745c6`, Phase 4/5 `763984b`, Phase 6 export `d8945b1`, bulk/symlink/preview `a03431d`. [CI 36353862539](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36353862539) passed frontend, Linux/Windows Rust, Windows fixture, MSI and NSIS.
 - Actual business files changed: **0**; `C:\FileOrbit` changed: **0**; `main` changed: **0**.

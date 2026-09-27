@@ -169,6 +169,7 @@ pub fn scan_indexed_test_root(test_root: String, scan_root: String) -> Result<In
 pub struct InboxItem {
     pub file_id: String, pub filename: String, pub current_path: String,
     pub extension: Option<String>, pub size_bytes: i64, pub modified_ns: i64,
+    pub modified_ns_text: String,
     pub index_state: String, pub review_state: String, pub related_state: String,
     pub proposed_destination: Option<String>, pub reason: Option<String>,
     pub confidence: Option<f64>, pub action_status: String,
@@ -188,7 +189,7 @@ pub fn discover_test_inbox(test_root: String, inbox_path: String) -> Result<Vec<
 pub fn list_test_inbox(test_root: String) -> Result<Vec<InboxItem>, String> {
     let db = test_database(&test_root)?;
     let mut stmt = db.prepare("SELECT f.id,f.name,f.path,f.extension,f.size_bytes,f.modified_ns,f.state,i.review_state,i.related_state,i.proposed_destination,i.reason,i.confidence,i.action_status FROM inbox_items i JOIN files f ON f.id=i.file_id ORDER BY f.path").map_err(|e| e.to_string())?;
-    let rows = stmt.query_map([], |r| Ok(InboxItem { file_id:r.get(0)?, filename:r.get(1)?, current_path:r.get(2)?, extension:r.get(3)?, size_bytes:r.get(4)?, modified_ns:r.get(5)?, index_state:r.get(6)?, review_state:r.get(7)?, related_state:r.get(8)?, proposed_destination:r.get(9)?, reason:r.get(10)?, confidence:r.get(11)?, action_status:r.get(12)? })).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |r| Ok(InboxItem { file_id:r.get(0)?, filename:r.get(1)?, current_path:r.get(2)?, extension:r.get(3)?, size_bytes:r.get(4)?, modified_ns:r.get(5)?, modified_ns_text:r.get::<_,i64>(5)?.to_string(), index_state:r.get(6)?, review_state:r.get(7)?, related_state:r.get(8)?, proposed_destination:r.get(9)?, reason:r.get(10)?, confidence:r.get(11)?, action_status:r.get(12)? })).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())
 }
 
@@ -382,6 +383,14 @@ pub fn import_test_corrections(test_root: String, corrections: Vec<SheetCorrecti
     Ok(result)
 }
 
+#[tauri::command]
+pub fn list_test_corrections(test_root: String) -> Result<Vec<ImportedCorrection>, String> {
+    let db = test_database(&test_root)?;
+    let mut stmt = db.prepare("SELECT stable_item_id,file_id,normalized_action,source_path,destination_path,status FROM workspace_corrections ORDER BY imported_at,stable_item_id").map_err(|e|e.to_string())?;
+    let rows = stmt.query_map([],|r|Ok(ImportedCorrection { stable_item_id:r.get(0)?, file_id:r.get(1)?, normalized_action:r.get(2)?, source_path:r.get(3)?, destination_path:r.get(4)?, status:r.get(5)? })).map_err(|e|e.to_string())?;
+    rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -563,6 +572,7 @@ mod tests {
         assert!(import_test_corrections(root_str.clone(),vec![row.clone(),invalid]).is_err());
         assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM workspace_corrections",[],|r|r.get::<_,i64>(0)).unwrap(),0);
         assert_eq!(import_test_corrections(root_str.clone(),vec![row.clone()]).unwrap()[0].status,"imported");
+        assert_eq!(list_test_corrections(root_str.clone()).unwrap().len(),1);
         assert_eq!(import_test_corrections(root_str.clone(),vec![row.clone()]).unwrap().len(),1);
         let mut conflicting = row.clone(); conflicting.correction_revision = "rev-2".into();
         assert!(import_test_corrections(root_str.clone(),vec![conflicting]).is_err());
