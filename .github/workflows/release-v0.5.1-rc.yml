@@ -1,0 +1,46 @@
+name: Publish V0.5.1 Prerelease
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: src-tauri
+      - run: npm ci --no-audit --no-fund
+      - name: Verify V0.5.1 version alignment
+        shell: pwsh
+        run: |
+          node -e "const p=require('./package.json'),t=require('./src-tauri/tauri.conf.json'); if(p.version!=='0.5.1'||t.version!=='0.5.1') throw new Error('Expected 0.5.1');"
+          Select-String -Path src-tauri/Cargo.toml -SimpleMatch 'version="0.5.1"' | Out-Null
+      - name: Run frontend build
+        run: npm run build
+      - name: Run Rust tests on Windows
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows installers
+        run: npm run tauri build -- --bundles msi,nsis
+      - name: Publish isolated prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v0.5.1-rc.1"
+          if (gh release view $tag 2>$null) { throw "Release $tag already exists; refusing overwrite." }
+          $msi = Get-ChildItem src-tauri/target/release/bundle/msi/*.msi
+          $exe = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe
+          if ($msi.Count -ne 1 -or $exe.Count -ne 1) { throw "Expected exactly one MSI and one NSIS installer." }
+          $checksums = @(
+            "$( (Get-FileHash $msi.FullName -Algorithm SHA256).Hash.ToLower() )  $($msi.Name)",
+            "$( (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower() )  $($exe.Name)"
+          )
+          $checksums | Set-Content -Encoding ascii SHA256SUMS.txt
+          $notes = "FileOrbit V0.5.1 RC1 prerelease for installed Windows testing. Adds read-only Structure Discovery, protected-context detection, conservative folder diagnostics, similar-folder comparison, prioritized review queue, reversible review decisions, and read-only Context Routing Top 3. Existing V0.5.0 Stable remains unchanged. Folder review decisions do not authorize Move, merge, rename, delete, or overwrite."
+          gh release create $tag $msi.FullName $exe.FullName SHA256SUMS.txt --target "${{ github.sha }}" --title "FileOrbit V0.5.1 RC1" --notes $notes --prerelease
