@@ -1,6 +1,6 @@
 # FileOrbit 2.0 Phase 2 Acceptance
 
-**Status: PENDING — automated gates PASS; installed-app interactive Test Root E2E remains. Do not begin Phase 3.**
+**Status: MANUAL_WINDOWS_E2E_PENDING — automated gates PASS. Later phase implementation may proceed; no phase is ACCEPTED until this gate passes.**
 
 - Branch baseline: `phase/fileorbit-2-transition@6c446cc164c777c5736e3dda91c5346a8fe899be`.
 - Scope: Tauri SQLite index connection, v1/v2 migrations, synthetic Test Root metadata scan, query API and minimal UI status panel.

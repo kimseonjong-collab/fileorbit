@@ -74,6 +74,7 @@ fn stamp() -> String { format!("{}", ns(Ok(SystemTime::now()))) }
 
 fn safe_entry(entry: &walkdir::DirEntry) -> bool {
     if entry.file_type().is_symlink() { return false; }
+    if entry.depth() > 0 && entry.file_type().is_dir() && crate::excluded(&entry.file_name().to_string_lossy()) { return false; }
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
@@ -129,6 +130,7 @@ pub fn scan_indexed_test_root(test_root: String, scan_root: String) -> Result<In
     }
     let mut db = test_database(&test_root)?;
     let tx = db.transaction().map_err(|e| format!("스캔 transaction 실패: {e}"))?;
+    tx.execute_batch("CREATE TEMP TABLE seen_files(path TEXT PRIMARY KEY); CREATE TEMP TABLE seen_folders(path TEXT PRIMARY KEY);").map_err(|e| format!("스캔 상태 준비 실패: {e}"))?;
     let root_path = root.to_string_lossy().into_owned();
     let run_id = format!("scan-{}", stamp());
     tx.execute("INSERT OR IGNORE INTO scan_roots(id,path) VALUES(?1,?1)", [&root_path]).map_err(|e| e.to_string())?;
@@ -140,18 +142,20 @@ pub fn scan_indexed_test_root(test_root: String, scan_root: String) -> Result<In
         let relative = path.strip_prefix(&root).map_err(|e| e.to_string())?.to_string_lossy().into_owned();
         let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
         if is_dir {
+            tx.execute("INSERT INTO temp.seen_folders(path) VALUES(?1)",[&path_str]).map_err(|e| e.to_string())?;
             let parent = if path == root { None } else { path.parent().map(|p| p.to_string_lossy().into_owned()) };
-            tx.execute("INSERT INTO folders(id,root_id,path,parent_id,name,state,last_seen_run_id,relative_path) VALUES(?1,?2,?1,?3,?4,'present',?5,?6) ON CONFLICT(path) DO UPDATE SET state='present',last_seen_run_id=excluded.last_seen_run_id,name=excluded.name",params![path_str,root_path,parent,name,run_id,relative]).map_err(|e| format!("폴더 저장 실패: {e}"))?;
+            tx.execute("INSERT INTO folders(id,root_id,path,parent_id,name,state,last_seen_run_id,relative_path) VALUES(?1,?2,?1,?3,?4,'present',?5,?6) ON CONFLICT(path) DO UPDATE SET state='present',last_seen_run_id=excluded.last_seen_run_id,name=excluded.name,parent_id=excluded.parent_id WHERE folders.state!='present' OR folders.name!=excluded.name OR folders.parent_id IS NOT excluded.parent_id",params![path_str,root_path,parent,name,run_id,relative]).map_err(|e| format!("폴더 저장 실패: {e}"))?;
             folders += 1;
         } else {
+            tx.execute("INSERT INTO temp.seen_files(path) VALUES(?1)",[&path_str]).map_err(|e| e.to_string())?;
             let parent = path.parent().ok_or("파일 상위 폴더 없음")?.to_string_lossy().into_owned();
             let ext = path.extension().map(|v| v.to_string_lossy().to_ascii_lowercase());
-            tx.execute("INSERT INTO files(id,root_id,folder_id,path,name,extension,size_bytes,modified_ns,state,last_seen_run_id,relative_path,created_ns) VALUES(?1,?2,?3,?1,?4,?5,?6,?7,'present',?8,?9,?10) ON CONFLICT(path) DO UPDATE SET name=excluded.name,extension=excluded.extension,size_bytes=excluded.size_bytes,modified_ns=excluded.modified_ns,created_ns=excluded.created_ns,state='present',last_seen_run_id=excluded.last_seen_run_id,changed_at=CURRENT_TIMESTAMP",params![path_str,root_path,parent,name,ext,size,modified,run_id,relative,created]).map_err(|e| format!("파일 저장 실패: {e}"))?;
+            tx.execute("INSERT INTO files(id,root_id,folder_id,path,name,extension,size_bytes,modified_ns,state,last_seen_run_id,relative_path,created_ns) VALUES(?1,?2,?3,?1,?4,?5,?6,?7,'present',?8,?9,?10) ON CONFLICT(path) DO UPDATE SET name=excluded.name,extension=excluded.extension,size_bytes=excluded.size_bytes,modified_ns=excluded.modified_ns,created_ns=excluded.created_ns,state='present',last_seen_run_id=excluded.last_seen_run_id,changed_at=CURRENT_TIMESTAMP WHERE files.state!='present' OR files.name!=excluded.name OR files.extension IS NOT excluded.extension OR files.size_bytes!=excluded.size_bytes OR files.modified_ns!=excluded.modified_ns OR files.created_ns IS NOT excluded.created_ns OR files.folder_id!=excluded.folder_id",params![path_str,root_path,parent,name,ext,size,modified,run_id,relative,created]).map_err(|e| format!("파일 저장 실패: {e}"))?;
             files += 1;
         }
     }
-    tx.execute("UPDATE files SET state='missing' WHERE root_id=?1 AND last_seen_run_id<>?2 AND state='present'",params![root_path,run_id]).map_err(|e| e.to_string())?;
-    tx.execute("UPDATE folders SET state='missing' WHERE root_id=?1 AND last_seen_run_id<>?2 AND state='present'",params![root_path,run_id]).map_err(|e| e.to_string())?;
+    tx.execute("UPDATE files SET state='missing' WHERE root_id=?1 AND state='present' AND NOT EXISTS(SELECT 1 FROM temp.seen_files WHERE path=files.path)",[&root_path]).map_err(|e| e.to_string())?;
+    tx.execute("UPDATE folders SET state='missing' WHERE root_id=?1 AND state='present' AND NOT EXISTS(SELECT 1 FROM temp.seen_folders WHERE path=folders.path)",[&root_path]).map_err(|e| e.to_string())?;
     tx.execute("UPDATE scan_runs SET completed_at=?2,status='completed',files_seen=?3,folders_seen=?4 WHERE id=?1",params![run_id,stamp(),files,folders]).map_err(|e| e.to_string())?;
     tx.execute("UPDATE scan_roots SET last_completed_run_id=?2 WHERE id=?1",params![root_path,run_id]).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| format!("스캔 commit 실패: {e}"))?;
@@ -206,9 +210,14 @@ mod tests {
         std::fs::create_dir_all(fixtures.join("D-Project/회의록")).unwrap();
         let file = fixtures.join("D-Project/회의록/회의 (1).TXT");
         std::fs::write(&file,b"synthetic").unwrap();
+        std::fs::create_dir_all(fixtures.join("node_modules")).unwrap();
+        std::fs::write(fixtures.join("node_modules/generated.js"),b"generated").unwrap();
         let scan = fixtures.to_string_lossy().into_owned();
         assert_eq!(scan_indexed_test_root(root_str.clone(),scan.clone()).unwrap().file_count,1);
+        let first_seen: String = test_database(&root_str).unwrap().query_row("SELECT last_seen_run_id FROM files",[],|r|r.get(0)).unwrap();
         assert_eq!(scan_indexed_test_root(root_str.clone(),scan.clone()).unwrap().file_count,1);
+        let unchanged_seen: String = test_database(&root_str).unwrap().query_row("SELECT last_seen_run_id FROM files",[],|r|r.get(0)).unwrap();
+        assert_eq!(first_seen,unchanged_seen,"unchanged file should not be rewritten");
         assert_eq!(indexed_files(root_str.clone(),Some("회의".into()),None,Some("txt".into()),None).unwrap().len(),1);
         std::fs::write(&file,b"changed synthetic metadata").unwrap();
         let added = fixtures.join("D-Project/회의록/긴 경로 (2) 보고서.pdf");
@@ -216,11 +225,15 @@ mod tests {
         assert_eq!(scan_indexed_test_root(root_str.clone(),scan.clone()).unwrap().file_count,2);
         assert_eq!(indexed_files(root_str.clone(),Some("회의".into()),None,Some("txt".into()),None).unwrap()[0].size_bytes,26);
         assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM files",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+        let moved = fixtures.join("D-Project/회의록/이동된 회의.txt");
+        std::fs::rename(&file,&moved).unwrap();
+        assert_eq!(scan_indexed_test_root(root_str.clone(),scan.clone()).unwrap().file_count,2);
+        assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM files WHERE state='missing'",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+        std::fs::remove_file(&moved).unwrap();
         std::fs::remove_file(&added).unwrap();
-        std::fs::remove_file(&file).unwrap();
         assert_eq!(scan_indexed_test_root(root_str.clone(),scan).unwrap().file_count,0);
         assert_eq!(indexed_files(root_str.clone(),None,None,None,None).unwrap()[0].state,"missing");
-        assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM files",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+        assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM files",[],|r|r.get::<_,i64>(0)).unwrap(),3);
         assert!(checked_scan_root(&root_str,&root_str).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
