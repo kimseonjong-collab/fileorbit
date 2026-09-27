@@ -3,12 +3,13 @@ param(
   [string]$Root
 )
 $ErrorActionPreference = 'Stop'
-$temp = (Resolve-Path $env:TEMP).Path
+$temp = [IO.Path]::GetFullPath($env:TEMP)
 if ($Mode -eq 'Prepare') {
   $Root = Join-Path $temp ('FileOrbit-Test-Phase2-' + [guid]::NewGuid().ToString('N'))
 } elseif (-not $Root) { throw 'Verify/Cleanup requires -Root from Prepare output.' }
 $full = [IO.Path]::GetFullPath($Root)
-if (-not ($full.StartsWith($temp + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))) {
+$relative = [IO.Path]::GetRelativePath($temp, $full)
+if ($relative -eq '.' -or [IO.Path]::IsPathRooted($relative) -or $relative -eq '..' -or $relative.StartsWith('..' + [IO.Path]::DirectorySeparatorChar)) {
   throw 'Only a disposable Test Root under TEMP is allowed.'
 }
 if (-not ([IO.Path]::GetFileName($full) -match '^FileOrbit-Test-Phase2-[a-f0-9]{32}$')) { throw 'Invalid fixture folder name.' }
