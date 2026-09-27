@@ -249,6 +249,28 @@ pub fn test_workspace_rows(test_root: String) -> Result<Vec<WorkspaceRow>, Strin
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkspaceSyncPlan {
+    pub report: crate::workspace_sync::SyncReport,
+    pub rows: Vec<crate::workspace_sync::ReviewRow>,
+}
+
+// The caller may supply a bounded Sheet snapshot. This command returns an idempotent plan only.
+#[tauri::command]
+pub fn plan_test_workspace_sync(test_root: String, remote_rows: Vec<crate::workspace_sync::ReviewRow>) -> Result<WorkspaceSyncPlan, String> {
+    if remote_rows.len() > 10_000 { return Err("Sheet 행 제한 초과".into()); }
+    let local: Vec<_> = test_workspace_rows(test_root)?.into_iter().map(|r| crate::workspace_sync::ReviewRow {
+        stable_item_id:r.stable_item_id, file_id:r.file_id, current_path:r.current_path,
+        filename:r.filename, size_bytes:r.size_bytes, modified_ns:r.modified_ns,
+        index_state:r.index_state, review_state:r.review_state,
+        user_correction:String::new(), action_status:r.action_status,
+    }).collect();
+    let mut provider = crate::workspace_sync::MemorySheet { rows:remote_rows };
+    let report = crate::workspace_sync::sync_inbox(&mut provider,&local)?;
+    Ok(WorkspaceSyncPlan { report, rows:provider.rows })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CorrectionPreview {
     pub file_id: String, pub action: String, pub source_path: String,
     pub destination_path: String, pub user_correction: String,
@@ -376,6 +398,9 @@ mod tests {
         let workspace = test_workspace_rows(root_str.clone()).unwrap();
         assert_eq!(workspace[0].stable_item_id,format!("inbox:{}",item.file_id));
         assert_eq!(workspace[0].sync_status,"not_synced");
+        let plan = plan_test_workspace_sync(root_str.clone(),vec![]).unwrap();
+        assert_eq!(plan.report.inserted,1);
+        assert_eq!(plan_test_workspace_sync(root_str.clone(),plan.rows).unwrap().report.unchanged,1);
         let preview = preview_test_correction(root_str.clone(),item.file_id.clone(),"설계 폴더로".into(),project.join("new.pdf").to_string_lossy().into_owned()).unwrap();
         assert_eq!(preview.dry_run_status,"preview_only");
         assert!(preview_test_correction(root_str.clone(),item.file_id.clone(),"잘못된 대상".into(),source.to_string_lossy().into_owned()).is_err());
