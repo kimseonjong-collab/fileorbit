@@ -83,6 +83,36 @@ pub fn sync_inbox<P: SheetProvider>(provider: &mut P, local: &[ReviewRow]) -> Re
     Ok(report)
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateRow {
+    pub stable_item_id: String, pub file_id: String, pub candidate_id: String,
+    pub candidate_type: String, pub candidate_path: String,
+    pub score_basis_points: u16, pub evidence: String,
+}
+
+pub fn plan_candidates(local: &[CandidateRow], remote: &[CandidateRow]) -> Result<(SyncReport,Vec<CandidateRow>), String> {
+    let mut seen = HashSet::new();
+    for row in remote {
+        if row.candidate_id.is_empty() || !seen.insert(&row.candidate_id) { return Err("Sheet 후보 ID 중복 또는 누락".into()); }
+    }
+    seen.clear();
+    for row in local {
+        if row.candidate_id.is_empty() || !seen.insert(&row.candidate_id) { return Err("Index 후보 ID 중복 또는 누락".into()); }
+    }
+    let mut merged = remote.to_vec();
+    let mut report = SyncReport::default();
+    for item in local {
+        if item.candidate_id != format!("candidate:{}:{}:{}",item.file_id,item.candidate_type,item.candidate_path)
+            || item.stable_item_id != format!("inbox:{}",item.file_id) { return Err("후보 stable ID 불일치".into()); }
+        if let Some(saved) = merged.iter_mut().find(|r| r.candidate_id == item.candidate_id) {
+            if saved == item { report.unchanged += 1; }
+            else { *saved = item.clone(); report.updated += 1; }
+        } else { merged.push(item.clone()); report.inserted += 1; }
+    }
+    Ok((report,merged))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,5 +163,13 @@ mod tests {
         provider.rows.clear(); provider.fail_write = true;
         assert!(sync_inbox(&mut provider,&[fixture("file")]).is_err());
         assert!(provider.rows.is_empty());
+    }
+    #[test]
+    fn candidate_plan_is_idempotent_and_rejects_duplicate_ids() {
+        let c = CandidateRow { stable_item_id:"inbox:한글".into(),file_id:"한글".into(),candidate_id:"candidate:한글:folder:/synthetic/설계".into(),candidate_type:"folder".into(),candidate_path:"/synthetic/설계".into(),score_basis_points:5000,evidence:"공통 단어".into() };
+        let (first,rows) = plan_candidates(&[c.clone()],&[]).unwrap();
+        assert_eq!(first.inserted,1);
+        assert_eq!(plan_candidates(&[c.clone()],&rows).unwrap().0.unchanged,1);
+        assert!(plan_candidates(&[c.clone()],&[c.clone(),c]).is_err());
     }
 }

@@ -272,6 +272,26 @@ pub fn plan_test_workspace_sync(test_root: String, remote_rows: Vec<crate::works
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CandidateSyncPlan {
+    pub report: crate::workspace_sync::SyncReport,
+    pub rows: Vec<crate::workspace_sync::CandidateRow>,
+}
+
+#[tauri::command]
+pub fn plan_test_candidate_sync(test_root: String, file_id: String, remote_rows: Vec<crate::workspace_sync::CandidateRow>) -> Result<CandidateSyncPlan, String> {
+    if remote_rows.len() > 10_000 { return Err("Sheet 후보 행 제한 초과".into()); }
+    let local = indexed_candidates(test_root, file_id.clone(),Some(100))?.into_iter().map(|c| crate::workspace_sync::CandidateRow {
+        stable_item_id:format!("inbox:{file_id}"),file_id:file_id.clone(),
+        candidate_id:format!("candidate:{}:{}:{}",file_id,c.candidate_type,c.candidate),
+        candidate_type:c.candidate_type,candidate_path:c.candidate,
+        score_basis_points:(c.score * 10_000.0).round() as u16,evidence:c.evidence,
+    }).collect::<Vec<_>>();
+    let (report,rows) = crate::workspace_sync::plan_candidates(&local,&remote_rows)?;
+    Ok(CandidateSyncPlan { report, rows })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CorrectionPreview {
     pub file_id: String, pub action: String, pub source_path: String,
     pub destination_path: String, pub user_correction: String,
@@ -465,6 +485,9 @@ mod tests {
         let plan = plan_test_workspace_sync(root_str.clone(),vec![]).unwrap();
         assert_eq!(plan.report.inserted,1);
         assert_eq!(plan_test_workspace_sync(root_str.clone(),plan.rows).unwrap().report.unchanged,1);
+        let candidates = plan_test_candidate_sync(root_str.clone(),item.file_id.clone(),vec![]).unwrap();
+        assert!(candidates.report.inserted > 0);
+        assert!(plan_test_candidate_sync(root_str.clone(),item.file_id.clone(),candidates.rows).unwrap().report.unchanged > 0);
         let preview = preview_test_correction(root_str.clone(),item.file_id.clone(),"설계 폴더로".into(),project.join("new.pdf").to_string_lossy().into_owned()).unwrap();
         assert_eq!(preview.dry_run_status,"preview_only");
         assert!(preview_test_correction(root_str.clone(),item.file_id.clone(),"잘못된 대상".into(),source.to_string_lossy().into_owned()).is_err());
