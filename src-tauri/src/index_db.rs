@@ -247,6 +247,35 @@ pub fn test_workspace_rows(test_root: String) -> Result<Vec<WorkspaceRow>, Strin
     rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CorrectionPreview {
+    pub file_id: String, pub action: String, pub source_path: String,
+    pub destination_path: String, pub user_correction: String,
+    pub validation_status: String, pub dry_run_status: String,
+}
+
+// Natural language is context only. An explicit structured destination is required and no move is called.
+#[tauri::command]
+pub fn preview_test_correction(test_root: String, file_id: String, user_correction: String, destination_path: String) -> Result<CorrectionPreview, String> {
+    let db = test_database(&test_root)?;
+    let source: String = db.query_row("SELECT path FROM files WHERE id=?1 AND state='present'", [&file_id], |r|r.get(0)).map_err(|e|format!("Index file ID 조회 실패: {e}"))?;
+    let src = Path::new(&source);
+    if !src.is_file() || src.symlink_metadata().map_err(|e|e.to_string())?.file_type().is_symlink() { return Err("원본 파일 상태가 Index와 다릅니다. 재스캔이 필요합니다".into()); }
+    let target = Path::new(&destination_path);
+    if !target.is_absolute() || crate::has_parent_dir(target) || crate::windows_reserved_target_name(target) || target.symlink_metadata().is_ok() { return Err("목적지는 충돌 없는 절대 경로여야 합니다".into()); }
+    let parent = target.parent().ok_or("목적지 상위 폴더 없음")?;
+    let parent = parent.canonicalize().map_err(|e|format!("목적지 상위 폴더 확인 실패: {e}"))?;
+    let root = crate::paths::bootstrap_test_root(&test_root,true)?;
+    let fixture = Path::new(&root.root).join("testdata").canonicalize().map_err(|e|e.to_string())?;
+    if !src.canonicalize().map_err(|e|e.to_string())?.starts_with(&fixture) { return Err("원본이 Test Root 밖을 가리킵니다".into()); }
+    if !parent.starts_with(&fixture) || parent == fixture { return Err("목적지는 Test Root/testdata의 기존 하위 폴더 안에 있어야 합니다".into()); }
+    let filename = target.file_name().ok_or("목적지 파일명 없음")?;
+    let normalized_target = parent.join(filename);
+    if normalized_target.symlink_metadata().is_ok() { return Err("목적지 충돌".into()); }
+    Ok(CorrectionPreview { file_id, action:"MOVE".into(), source_path:source, destination_path:normalized_target.to_string_lossy().into_owned(), user_correction, validation_status:"validated_test_root".into(), dry_run_status:"preview_only".into() })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,9 +376,53 @@ mod tests {
         let workspace = test_workspace_rows(root_str.clone()).unwrap();
         assert_eq!(workspace[0].stable_item_id,format!("inbox:{}",item.file_id));
         assert_eq!(workspace[0].sync_status,"not_synced");
+        let preview = preview_test_correction(root_str.clone(),item.file_id.clone(),"설계 폴더로".into(),project.join("new.pdf").to_string_lossy().into_owned()).unwrap();
+        assert_eq!(preview.dry_run_status,"preview_only");
+        assert!(preview_test_correction(root_str.clone(),item.file_id.clone(),"잘못된 대상".into(),source.to_string_lossy().into_owned()).is_err());
+        assert!(!project.join("new.pdf").exists());
         assert!(source.exists());
         assert!(checked_scan_root(&root_str,&root_str).is_err());
         drop(list_test_inbox(root_str).unwrap());
         std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn thousand_file_refresh_preserves_unchanged_rows() {
+        let root = disposable("bulk");
+        let root_str = root.to_string_lossy().into_owned();
+        crate::paths::bootstrap_test_root(&root_str,false).unwrap();
+        let fixtures = root.join("testdata/대량 fixture");
+        std::fs::create_dir_all(&fixtures).unwrap();
+        for i in 0..1200 { std::fs::write(fixtures.join(format!("file-{i}.txt")),b"synthetic").unwrap(); }
+        let scan = fixtures.to_string_lossy().into_owned();
+        assert_eq!(scan_indexed_test_root(root_str.clone(),scan.clone()).unwrap().file_count,1200);
+        let first: String = test_database(&root_str).unwrap().query_row("SELECT last_seen_run_id FROM files WHERE name='file-1.txt'",[],|r|r.get(0)).unwrap();
+        assert_eq!(scan_indexed_test_root(root_str.clone(),scan.clone()).unwrap().file_count,1200);
+        let db = test_database(&root_str).unwrap();
+        assert_eq!(db.query_row("SELECT count(*) FROM files WHERE last_seen_run_id=?1",[&first],|r|r.get::<_,i64>(0)).unwrap(),1200);
+        drop(db);
+        std::fs::write(fixtures.join("file-1.txt"),b"modified synthetic").unwrap();
+        std::fs::remove_file(fixtures.join("file-2.txt")).unwrap();
+        assert_eq!(scan_indexed_test_root(root_str.clone(),scan).unwrap().file_count,1199);
+        let db = test_database(&root_str).unwrap();
+        assert_eq!(db.query_row("SELECT count(*) FROM files WHERE last_seen_run_id=?1 AND state='present'",[&first],|r|r.get::<_,i64>(0)).unwrap(),1198);
+        assert_eq!(db.query_row("SELECT count(*) FROM files WHERE state='missing'",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+        drop(db);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn scan_does_not_follow_symlink_outside_test_root() {
+        let root = disposable("link");
+        let outside = disposable("outside");
+        let root_str = root.to_string_lossy().into_owned();
+        crate::paths::bootstrap_test_root(&root_str,false).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("private.txt"),b"synthetic").unwrap();
+        let scan = root.join("testdata/fixtures");
+        std::fs::create_dir_all(&scan).unwrap();
+        std::os::unix::fs::symlink(&outside,scan.join("escape")).unwrap();
+        assert_eq!(scan_indexed_test_root(root_str,scan.to_string_lossy().into_owned()).unwrap().file_count,0);
+        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(outside).unwrap();
     }
 }

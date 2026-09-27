@@ -7,7 +7,7 @@
 | 3 Full Scan + Incremental Refresh | Implemented, metadata traversal | PASS [CI 36308475990](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36308475990) | Upstream manual gate pending | IMPLEMENTED / AUTOMATED_TEST_PASS / UPSTREAM_MANUAL_GATE_PENDING |
 | 4 Downloads Inbox | Synthetic index discovery implemented | PASS in same CI | Upstream manual gate pending | No automatic move; not ACCEPTED |
 | 5 Candidate Engine | Deterministic SQLite-only search implemented | PASS in same CI | Upstream manual gate pending | Candidates only; not ACCEPTED |
-| 6 Google Sheet Workspace | [FileOrbit_AI_Workspace](https://docs.google.com/spreadsheets/d/1HWdkfe0QO7Dtvppq4WFc4oAEyPapnov0Qn0v0W9Th7I/edit) created; export contract in progress | PENDING next CI | Upstream manual gate pending | SQLite remains source of truth; sync not connected |
+| 6 Google Sheet Workspace | [FileOrbit_AI_Workspace](https://docs.google.com/spreadsheets/d/1HWdkfe0QO7Dtvppq4WFc4oAEyPapnov0Qn0v0W9Th7I/edit) created; Test Root export and preview model | Export PASS [CI 36353482719](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36353482719); preview CI PENDING | Upstream manual gate pending | SQLite remains source of truth; sync not connected |
 
 ## Current Phase 3 slice
 
@@ -17,7 +17,8 @@
 - CI [36308190044](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36308190044): Linux Rust, frontend, SQLite, Windows fixture PASS; Windows Rust and MSI/NSIS checkpoint pending.
 - Phase 4: schema v3 inbox review rows retain state across repeated discovery. Only disposable Test Root/testdata is accepted. Existing Downloads Review remains available; no file movement is invoked.
 - Phase 5: candidates are read from present SQLite file/folder rows, with deterministic name/path token, extension, and date signals. This first slice has no prior decision/history signal and scans indexed rows in memory; it never rescans the filesystem or executes a proposal.
-- Phase 6: native Google Sheet tabs `Inbox_Review`, `Candidates`, `Corrections`, `ReadMe` contain headers and no actual file metadata. Test Root only export rows use stable `inbox:<file_id>` identifiers and `not_synced`; live sync, correction import and conflict handling remain BLOCKED/PENDING implementation. Sheet edits never alter SQLite or files.
+- Phase 6: native Google Sheet tabs `Inbox_Review`, `Candidates`, `Corrections`, `ReadMe` contain headers and no actual file metadata. Test Root only export rows use stable `inbox:<file_id>` identifiers and `not_synced`. A correction preview requires an explicit structured destination and validates synthetic source/target, without filesystem writes. Live sync, correction import and conflict handling remain PENDING implementation. Sheet edits never alter SQLite or files.
 - CI [36308475990](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36308475990) passed frontend, Linux and Windows Rust tests, Windows fixture, MSI and NSIS. Phase 2 **MANUAL_WINDOWS_E2E_PENDING** remains the upstream manual gate; installed-app interactive test was not run by CI.
-- Commit: Phase 3 `ee745c6`, Phase 4/5 `763984b`; Phase 6 export commit and next CI pending. Actual business files changed: **0**; `C:\FileOrbit` changed: **0**; `main` changed: **0**.
+- Phase 6 export commit `d8945b1`; [CI 36353482719](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36353482719) passed frontend, Linux/Windows Rust, Windows fixture, MSI and NSIS. The additional bulk/symlink/preview checkpoint is pending.
+- Actual business files changed: **0**; `C:\FileOrbit` changed: **0**; `main` changed: **0**.
 - Next: export adapter CI and safe sync/correction data contract; then one disposable Windows installed-app interactive E2E with the user.
