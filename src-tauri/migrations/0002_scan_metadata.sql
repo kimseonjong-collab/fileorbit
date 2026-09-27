@@ -1,0 +1,5 @@
+ALTER TABLE scan_runs ADD COLUMN folders_seen INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE scan_runs ADD COLUMN errors_seen INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE files ADD COLUMN relative_path TEXT;
+ALTER TABLE files ADD COLUMN created_ns INTEGER;
+ALTER TABLE folders ADD COLUMN relative_path TEXT;
