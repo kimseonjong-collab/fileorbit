@@ -177,6 +177,7 @@ mod tests {
         let result = open_database(&path);
         assert!(result.is_err());
         db.execute_batch("ROLLBACK").unwrap();
+        drop(db);
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
