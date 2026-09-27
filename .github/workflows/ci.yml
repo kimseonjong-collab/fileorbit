@@ -121,10 +121,11 @@ jobs:
           grep -F '6c27e0f25382f6ceb673f3c4775fad87e992e2c71d304081682e12800e368e5f' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
           grep -F '43a9d0d6e125f91333dd88087412720a37588c6ad1b7cf8aa3823e8f460ec780' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
           grep -F 'V0.5 stable remains **BLOCKED**' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
-      - name: Guard frozen V0.5 RC2 publisher
+      - name: Guard V0.5 RC3 publisher identity
         run: |
-          grep -F 'if: false # RC2 is frozen' .github/workflows/release-v0.5-rc.yml
-          grep -F 'v0.5.0-rc.2' .github/workflows/release-v0.5-rc.yml
+          grep -F "[publish-v0.5-rc3]" .github/workflows/release-v0.5-rc.yml
+          grep -F 'v0.5.0-rc.3' .github/workflows/release-v0.5-rc.yml
+          grep -F 'FileOrbit V0.5 RC3' .github/workflows/release-v0.5-rc.yml
       - name: Guard legacy release triggers against current V0.5 source
         run: |
           node - <<'NODE'
