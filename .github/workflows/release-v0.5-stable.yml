@@ -1,0 +1,38 @@
+name: Publish V0.5 Stable Release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  publish:
+    if: contains(github.event.head_commit.message, '[publish-v0.5-stable]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify stable authorization and RC3 identity
+        shell: pwsh
+        run: |
+          Select-String -Path docs/V0.5_WINDOWS_ACCEPTANCE.md -SimpleMatch 'Status: **ACCEPTED**' | Out-Null
+          Select-String -Path docs/V0.5_WINDOWS_ACCEPTANCE.md -SimpleMatch 'V0.5_STABLE_AUTHORIZED=true' | Out-Null
+          Select-String -Path docs/V0.5_WINDOWS_ACCEPTANCE.md -SimpleMatch 'v0.5.0-rc.3' | Out-Null
+      - name: Download frozen RC3 assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Path stable-assets | Out-Null
+          gh release download v0.5.0-rc.3 --dir stable-assets --pattern 'FileOrbit_0.5.0_x64-setup.exe' --pattern 'FileOrbit_0.5.0_x64_en-US.msi' --pattern 'SHA256SUMS.txt'
+      - name: Verify frozen RC3 installer digests
+        shell: pwsh
+        run: |
+          if ((Get-FileHash 'stable-assets/FileOrbit_0.5.0_x64-setup.exe' -Algorithm SHA256).Hash.ToLower() -ne '727ee4262c7da4f78d6fc074367b2ff9bb65080da9fea2b19d5da384207662f5') { throw 'RC3 EXE digest mismatch' }
+          if ((Get-FileHash 'stable-assets/FileOrbit_0.5.0_x64_en-US.msi' -Algorithm SHA256).Hash.ToLower() -ne 'b375ea473c7873c98d441077c1d48b44c5c12241467e74d882be5a6bcbcfaba9') { throw 'RC3 MSI digest mismatch' }
+      - name: Publish immutable Stable release from RC3 assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = 'v0.5.0'
+          if (gh release view $tag 2>$null) { throw "Release $tag already exists; refusing overwrite." }
+          gh release create $tag stable-assets/FileOrbit_0.5.0_x64-setup.exe stable-assets/FileOrbit_0.5.0_x64_en-US.msi stable-assets/SHA256SUMS.txt --target '6595b54dda289b590b8e7dd564b00c19421b3b56' --title 'FileOrbit V0.5 Stable' --notes 'FileOrbit V0.5 Stable. Promoted from frozen RC3 assets after RC2 installed-GUI functional UAT, RC3 visual-only action-state clarification, and successful automated verification. Read-only-first, explicit approval, no deletion, no overwrite, journaled Move/Undo.'
