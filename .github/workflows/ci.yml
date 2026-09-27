@@ -63,7 +63,7 @@ jobs:
           node - <<'NODE'
           const fs=require('fs');
           const rc=fs.readFileSync('.github/workflows/release-v0.5-rc.yml','utf8');
-          if(!rc.includes('if: false # RC2 is frozen')) throw new Error('Frozen RC2 publisher was re-enabled');
+          if(!rc.includes("[publish-v0.5-rc3]")) throw new Error('RC3 publisher trigger missing');
           if(fs.existsSync('.github/workflows/release-v0.5-stable.yml')) throw new Error('V0.5 stable publisher exists before installed-GUI acceptance');
           const acceptance=fs.readFileSync('docs/V0.5_WINDOWS_ACCEPTANCE.md','utf8');
           if(acceptance.includes('V0.5_STABLE_AUTHORIZED=true') && !acceptance.includes('Status: **ACCEPTED**')) throw new Error('Authorization/status mismatch');
