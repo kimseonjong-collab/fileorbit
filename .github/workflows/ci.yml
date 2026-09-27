@@ -216,6 +216,14 @@ jobs:
         shell: pwsh
         run: |
           if (Test-Path (Join-Path $env:TEMP "FileOrbit-UAT")) { throw "Fixture cleanup failed." }
+      - name: Verify Phase 2 disposable Test Root preparation and cleanup
+        shell: pwsh
+        run: |
+          $lines = ./scripts/phase2-windows-test-root.ps1 -Mode Prepare
+          $root = ($lines | Where-Object { $_ -like 'TestRoot=*' }) -replace '^TestRoot=', ''
+          if (-not $root -or -not (Test-Path (Join-Path $root 'testdata/fixtures/과제24년~/D-Project/회의록/회의 (1).TXT'))) { throw 'Phase 2 fixture missing.' }
+          ./scripts/phase2-windows-test-root.ps1 -Mode Cleanup -Root $root
+          if (Test-Path $root) { throw 'Phase 2 fixture cleanup failed.' }
   windows-installer:
     needs: [frontend, rust-check]
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[windows-checkpoint]'))

@@ -13,6 +13,14 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
   const [error,setError]=useState("");
   const [busy,setBusy]=useState(false);
   useEffect(()=>{if(!isWeb)invoke<Status>("app_index_status").then(setAppStatus).catch(()=>setError("로컬 Index 연결 상태를 확인할 수 없습니다."))},[isWeb]);
+  async function load(){
+    setBusy(true);setError("");
+    try{
+      setStatus(await invoke<Status>("index_status",{testRoot}));
+      setRows(await invoke<FileRow[]>("indexed_files",{testRoot,limit:20}));
+    }catch{setError("Test Root DB를 조회할 수 없습니다. 경로와 권한을 확인하십시오.")}
+    finally{setBusy(false)}
+  }
   async function scan(){
     setBusy(true);setError("");
     try{
@@ -28,6 +36,7 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
       <input aria-label="Test Root" placeholder="Test Root 절대 경로" value={testRoot} onChange={e=>setTestRoot(e.target.value)} style={{minWidth:240}}/>
       <input aria-label="스캔 폴더" placeholder="Test Root/testdata 내부 경로" value={scanRoot} onChange={e=>setScanRoot(e.target.value)} style={{minWidth:260}}/>
       <button disabled={busy||!testRoot||!scanRoot} onClick={scan}>{busy?"스캔 중":"테스트 Index 스캔"}</button>
+      <button disabled={busy||!testRoot} onClick={load}>저장된 Index 조회</button>
     </div>}
     {status&&<p>인덱스 파일 {status.fileCount}개 · 마지막 완료 {status.lastScan??"없음"}</p>}
     {rows.length>0&&<div style={{maxHeight:150,overflow:"auto"}}>{rows.map(r=><div key={r.path}>{r.state==="present"?"●":"○"} {r.name} · {r.path}</div>)}</div>}
