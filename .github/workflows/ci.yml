@@ -96,26 +96,21 @@ jobs:
           NODE
       - name: Self-test V0.5 acceptance gate rejects incomplete approval
         run: |
-          cp docs/V0.5_WINDOWS_ACCEPTANCE.md /tmp/acceptance-forged.md
-          sed -i 's/Status: \\*\\*NOT YET ACCEPTED\\*\\*/Status: **ACCEPTED**/' /tmp/acceptance-forged.md
-          sed -i 's/V0.5_STABLE_AUTHORIZED=false/V0.5_STABLE_AUTHORIZED=true/' /tmp/acceptance-forged.md
-          sed -i 's/| 8 |/| 8 |/' /tmp/acceptance-forged.md
-          sed -i '/^| 8 |/s/| PASS |/| NOT RUN |/' /tmp/acceptance-forged.md
-          if node - /tmp/acceptance-forged.md <<'NODE'
+          node - <<'NODE'
           const fs=require('fs');
-          const p=process.argv[2],s=fs.readFileSync(p,'utf8');
-          if(!s.includes('Status: **ACCEPTED**')||!s.includes('V0.5_STABLE_AUTHORIZED=true')) process.exit(2);
-          for(let i=1;i<=8;i++){
-            const row=new RegExp('\\\\|\\\\s*'+i+'\\\\s*\\\\|[^\\\\n]*\\\\|\\\\s*PASS\\\\s*\\\\|');
-            if(!row.test(s)) throw new Error('Checkpoint '+i+' is not PASS');
-          }
+          const source=fs.readFileSync('docs/V0.5_WINDOWS_ACCEPTANCE.md','utf8');
+          const forged=source.replace(/^\| 8 \|.*$/m, line => line.replace('| PASS |','| NOT RUN |'));
+          if(!forged.includes('Status: **ACCEPTED**')||!forged.includes('V0.5_STABLE_AUTHORIZED=true')) throw new Error('Acceptance baseline missing');
+          let rejected=false;
+          try {
+            for(let i=1;i<=8;i++){
+              const row=new RegExp('\\\\|\\\\s*'+i+'\\\\s*\\\\|[^\\\\n]*\\\\|\\\\s*PASS\\\\s*\\\\|');
+              if(!row.test(forged)) throw new Error('Checkpoint '+i+' is not PASS');
+            }
+          } catch(e) { rejected=true; }
+          if(!rejected) throw new Error('Incomplete acceptance unexpectedly passed');
+          console.log('Incomplete acceptance correctly rejected.');
           NODE
-          then
-            echo "Incomplete acceptance unexpectedly passed."
-            exit 1
-          else
-            echo "Incomplete acceptance correctly rejected."
-          fi
       - name: Guard frozen V0.5 installed-GUI checkpoint
         run: |
           grep -F 'v0.5.0-rc.2' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
