@@ -82,6 +82,30 @@ jobs:
           }
           if(!s.includes('5171d465137a724a1d76eae1354478b10fc3560f')) throw new Error('Frozen RC2 source identity missing');
           NODE
+      - name: Self-test V0.5 acceptance gate rejects forged approval
+        run: |
+          cp docs/V0.5_WINDOWS_ACCEPTANCE.md /tmp/acceptance-forged.md
+          sed -i 's/Status: \*\*NOT YET ACCEPTED\*\*/Status: **ACCEPTED**/' /tmp/acceptance-forged.md
+          sed -i 's/V0.5_STABLE_AUTHORIZED=false/V0.5_STABLE_AUTHORIZED=true/' /tmp/acceptance-forged.md
+          if node - /tmp/acceptance-forged.md <<'NODE'
+          const fs=require('fs');
+          const p=process.argv[2],s=fs.readFileSync(p,'utf8');
+          if(!s.includes('Status: **ACCEPTED**')||!s.includes('V0.5_STABLE_AUTHORIZED=true')) process.exit(2);
+          for(let i=1;i<=8;i++){
+            const row=new RegExp('\\|\\s*'+i+'\\s*\\|[^\\n]*\\|\\s*PASS\\s*\\|');
+            if(!row.test(s)) throw new Error('Checkpoint '+i+' is not PASS');
+          }
+          for(const label of ['Installer type:','Installer SHA-256:','Windows version:','Test start/completion time:','Disposable fixture root:']){
+            const line=s.split(/\\r?\\n/).find(x=>x.includes(label));
+            if(!line || /TBD\s*$/.test(line)) throw new Error(label+' is incomplete');
+          }
+          NODE
+          then
+            echo "Forged incomplete acceptance unexpectedly passed."
+            exit 1
+          else
+            echo "Forged incomplete acceptance correctly rejected."
+          fi
       - name: Guard frozen V0.5 installed-GUI checkpoint
         run: |
           grep -F 'v0.5.0-rc.2' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
