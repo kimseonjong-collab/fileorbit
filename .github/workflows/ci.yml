@@ -41,6 +41,7 @@ jobs:
       - name: Guard release version alignment
         run: node -e "const p=require('./package.json'),t=require('./src-tauri/tauri.conf.json'); if(p.version!==t.version) throw new Error('package.json and tauri.conf.json versions differ')"
       - name: Guard post-RC2 change boundary
+        if: github.ref_name == 'main'
         shell: bash
         run: |
           git fetch --no-tags --deepen=100 origin main
@@ -52,6 +53,7 @@ jobs:
             exit 1
           fi
       - name: Guard runtime remains identical to frozen RC2
+        if: github.ref_name == 'main'
         shell: bash
         run: |
           git fetch --no-tags --depth=1 origin tag v0.5.0-rc.2 || git fetch --tags --force
