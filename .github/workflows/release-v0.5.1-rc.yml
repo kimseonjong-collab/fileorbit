@@ -1,10 +1,13 @@
 name: Publish V0.5.1 Prerelease
 on:
   workflow_dispatch:
+  push:
+    branches: [v0.5.1-structure-discovery]
 permissions:
   contents: write
 jobs:
   publish:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish-v0.5.1-rc1]')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
