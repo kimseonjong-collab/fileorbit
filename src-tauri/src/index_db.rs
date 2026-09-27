@@ -82,6 +82,12 @@ fn status(db: &Connection) -> Result<IndexStatus, String> {
 #[tauri::command]
 pub fn index_status(test_root: String) -> Result<IndexStatus, String> { status(&test_database(&test_root)?) }
 
+#[tauri::command]
+pub fn app_index_status(app: tauri::AppHandle) -> Result<IndexStatus, String> {
+    let root = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    status(&open_database(&database_path(&root))?)
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexedFile { pub path: String, pub name: String, pub extension: Option<String>, pub size_bytes: i64, pub state: String }
@@ -138,6 +144,41 @@ pub fn scan_indexed_test_root(test_root: String, scan_root: String) -> Result<In
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn disposable(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("fileorbit-{label}-{}-{}",std::process::id(),stamp()))
+    }
+    #[test]
+    fn migrations_reopen_and_reject_future_or_corrupt_db() {
+        let root = disposable("migration");
+        let path = database_path(&root);
+        let db = open_database(&path).unwrap();
+        assert_eq!(status(&db).unwrap().schema_version,2);
+        drop(db);
+        assert_eq!(status(&open_database(&path).unwrap()).unwrap().schema_version,2);
+        let db = Connection::open(&path).unwrap();
+        db.pragma_update(None,"user_version",99).unwrap();
+        drop(db);
+        assert!(open_database(&path).err().unwrap().contains("schema version"));
+        std::fs::remove_dir_all(&root).unwrap();
+        let root = disposable("corrupt");
+        let path = database_path(&root);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path,b"not a sqlite database").unwrap();
+        assert!(open_database(&path).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(),b"not a sqlite database");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn locked_database_returns_error() {
+        let root = disposable("locked");
+        let path = database_path(&root);
+        let db = open_database(&path).unwrap();
+        db.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        let result = open_database(&path);
+        assert!(result.is_err());
+        db.execute_batch("ROLLBACK").unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn test_root_scan_persists_and_rescans() {
         let root = std::env::temp_dir().join(format!("fileorbit-index-{}-{}",std::process::id(),stamp()));
@@ -151,10 +192,18 @@ mod tests {
         assert_eq!(scan_indexed_test_root(root_str.clone(),scan.clone()).unwrap().file_count,1);
         assert_eq!(scan_indexed_test_root(root_str.clone(),scan.clone()).unwrap().file_count,1);
         assert_eq!(indexed_files(root_str.clone(),Some("회의".into()),None,Some("txt".into()),None).unwrap().len(),1);
+        std::fs::write(&file,b"changed synthetic metadata").unwrap();
+        let added = fixtures.join("D-Project/회의록/긴 경로 (2) 보고서.pdf");
+        std::fs::write(&added,b"new").unwrap();
+        assert_eq!(scan_indexed_test_root(root_str.clone(),scan.clone()).unwrap().file_count,2);
+        assert_eq!(indexed_files(root_str.clone(),Some("회의".into()),None,Some("txt".into()),None).unwrap()[0].size_bytes,26);
+        assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM files",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+        std::fs::remove_file(&added).unwrap();
         std::fs::remove_file(&file).unwrap();
         assert_eq!(scan_indexed_test_root(root_str.clone(),scan).unwrap().file_count,0);
         assert_eq!(indexed_files(root_str.clone(),None,None,None,None).unwrap()[0].state,"missing");
-        assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM files",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+        assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM files",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+        assert!(checked_scan_root(&root_str,&root_str).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 }

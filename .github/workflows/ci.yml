@@ -165,13 +165,8 @@ jobs:
           workspaces: src-tauri
       - run: rustc --version && cargo --version
       - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - run: cargo check --manifest-path src-tauri/Cargo.toml
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
-        with:
-          name: phase2-cargo-lock
-          path: src-tauri/Cargo.lock
+      - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
   windows-uat-fixture:
     runs-on: windows-latest
     steps:
