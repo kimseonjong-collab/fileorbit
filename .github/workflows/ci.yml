@@ -63,7 +63,7 @@ jobs:
           node - <<'NODE'
           const fs=require('fs');
           const rc=fs.readFileSync('.github/workflows/release-v0.5-rc.yml','utf8');
-          if(!rc.includes("[publish-v0.5-rc3]")) throw new Error('RC3 publisher trigger missing');
+          if(!rc.includes('if: false # V0.5 RC3 is frozen after Stable promotion')) throw new Error('RC3 publisher is not frozen');
           const acceptance=fs.readFileSync('docs/V0.5_WINDOWS_ACCEPTANCE.md','utf8');
           if(fs.existsSync('.github/workflows/release-v0.5-stable.yml') && !acceptance.includes('V0.5_STABLE_AUTHORIZED=true')) throw new Error('Stable publisher exists without authorization');
           if(acceptance.includes('V0.5_STABLE_AUTHORIZED=true') && !acceptance.includes('Status: **ACCEPTED**')) throw new Error('Authorization/status mismatch');
@@ -125,7 +125,7 @@ jobs:
           grep -F 'V0.5 stable remains **BLOCKED**' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
       - name: Guard V0.5 RC3 publisher identity
         run: |
-          grep -F "[publish-v0.5-rc3]" .github/workflows/release-v0.5-rc.yml
+          grep -F 'if: false # V0.5 RC3 is frozen after Stable promotion' .github/workflows/release-v0.5-rc.yml
           grep -F 'v0.5.0-rc.3' .github/workflows/release-v0.5-rc.yml
           grep -F 'FileOrbit V0.5 RC3' .github/workflows/release-v0.5-rc.yml
       - name: Guard legacy release triggers against current V0.5 source
