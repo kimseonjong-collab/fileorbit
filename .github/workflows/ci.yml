@@ -90,7 +90,9 @@ jobs:
             const line=s.split(/\\r?\\n/).find(x=>x.includes(label));
             if(!line || /TBD\s*$/.test(line)) throw new Error(label+' is incomplete');
           }
-          if(!s.includes('5171d465137a724a1d76eae1354478b10fc3560f')) throw new Error('Frozen RC2 source identity missing');
+          if(!s.includes('6595b54dda289b590b8e7dd564b00c19421b3b56')) throw new Error('Frozen RC3 source identity missing');
+          if(!s.includes('727ee4262c7da4f78d6fc074367b2ff9bb65080da9fea2b19d5da384207662f5')) throw new Error('Frozen RC3 EXE digest missing');
+          if(!s.includes('b375ea473c7873c98d441077c1d48b44c5c12241467e74d882be5a6bcbcfaba9')) throw new Error('Frozen RC3 MSI digest missing');
           NODE
       - name: Self-test V0.5 acceptance gate rejects incomplete approval
         run: |
