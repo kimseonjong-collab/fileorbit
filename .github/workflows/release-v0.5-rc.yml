@@ -6,7 +6,7 @@ permissions:
   contents: write
 jobs:
   publish:
-    if: false # RC2 is frozen; intentionally create/update a new RC workflow only after a runtime defect requires RC3
+    if: contains(github.event.head_commit.message, '[publish-v0.5-rc3]')
     # historical trigger: contains(github.event.head_commit.message, '[publish-v0.5-rc]')
     runs-on: windows-latest
     steps:
@@ -27,9 +27,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.5.0-rc.2"
+          $tag = "v0.5.0-rc.3"
           if (gh release view $tag 2>$null) { throw "Release $tag already exists; refusing to overwrite or retarget an existing checkpoint." }
-          $notes = "FileOrbit V0.5 RC2 hardened Windows checkpoint. RC2 includes the post-RC1 Windows traversal regression fix, disposable Move-History-Undo-reload roundtrip coverage, and Folder Map persistence/fail-closed restore CI guards. V0.4 stable remains immutable. No automatic/background moves, deletion, silent overwrite, or automatic journal compaction. Validate with disposable files first."
+          $notes = "FileOrbit V0.5 RC3 release candidate. RC3 is RC2 plus a visual-only action-state clarification: enabled Move/Undo buttons are more prominent and disabled actions are more clearly muted. Move/Undo safety logic, data model, and explicit approval gates are unchanged. V0.4 stable remains immutable."
           $msi = Get-ChildItem src-tauri/target/release/bundle/msi/*.msi
           $exe = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe
           if ($msi.Count -ne 1 -or $exe.Count -ne 1) { throw "Expected exactly one MSI and one NSIS installer." }
@@ -39,4 +39,4 @@ jobs:
           )
           $checksumPath = "SHA256SUMS.txt"
           $checksums | Set-Content -Encoding ascii $checksumPath
-          gh release create $tag $msi.FullName $exe.FullName $checksumPath --target "${{ github.sha }}" --title "FileOrbit V0.5 RC2" --notes $notes --prerelease
+          gh release create $tag $msi.FullName $exe.FullName $checksumPath --target "${{ github.sha }}" --title "FileOrbit V0.5 RC3" --notes $notes --prerelease
