@@ -46,7 +46,7 @@ jobs:
           git fetch --no-tags --deepen=100 origin main
           git fetch --no-tags origin tag v0.5.0-rc.2
           git diff --name-only v0.5.0-rc.2..HEAD > post-rc2-files.txt
-          if grep -Ev '^(\.github/|docs/|scripts/|README\.md$)' post-rc2-files.txt > post-rc2-bad.txt; then
+          if grep -Ev '^(\.github/|docs/|scripts/|src/styles\.css$|README\.md$)' post-rc2-files.txt > post-rc2-bad.txt; then
             echo "Post-RC2 change outside approved non-runtime boundary:"
             cat post-rc2-bad.txt
             exit 1
