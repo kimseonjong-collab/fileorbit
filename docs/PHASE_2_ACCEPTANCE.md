@@ -13,7 +13,7 @@
 - Linux Rust, Windows Rust, Windows fixture, MSI and NSIS CI: PASS on [run 36307535465](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36307535465) for source `f669d58`. Installer artifact: [CI artifact 10927977385](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36307535465/artifacts/10927977385).
 - Actual business files changed: 0. Actual `C:\FileOrbit` changed: 0. `main` changed: 0.
 - Known limits: no production-folder index enablement, no live move-to-index synchronization, no installed-app interactive verification, no full incremental scan optimization (Phase 3).
-- Next gate: complete Windows CI, then run installed app against an isolated disposable Test Root before marking Phase 2 PASS or entering Phase 3.
+- Next gate: run the installed app against an isolated disposable Test Root before marking Phase 2 PASS. Phase 3 and later safe synthetic development may proceed while this manual gate remains open; no later phase is ACCEPTED yet.
 
 ## One-time Windows installed-app acceptance
 
