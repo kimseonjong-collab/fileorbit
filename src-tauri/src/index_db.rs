@@ -1,5 +1,5 @@
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
 use tauri::Manager;
 use walkdir::WalkDir;
@@ -7,6 +7,7 @@ use walkdir::WalkDir;
 const V1: &str = include_str!("../migrations/0001_index.sql");
 const V2: &str = include_str!("../migrations/0002_scan_metadata.sql");
 const V3: &str = include_str!("../migrations/0003_inbox.sql");
+const V4: &str = include_str!("../migrations/0004_workspace_corrections.sql");
 
 fn database_path(root: &Path) -> PathBuf { root.join("data").join("fileorbit.db") }
 
@@ -17,10 +18,10 @@ fn open_database(path: &Path) -> Result<Connection, String> {
     db.busy_timeout(std::time::Duration::from_millis(750)).map_err(|e| e.to_string())?;
     db.pragma_update(None, "foreign_keys", "ON").map_err(|e| e.to_string())?;
     let version: i64 = db.pragma_query_value(None, "user_version", |r| r.get(0)).map_err(|e| format!("DB 버전 확인 실패: {e}"))?;
-    if !(0..=3).contains(&version) { return Err(format!("지원하지 않는 DB schema version: {version}")); }
+    if !(0..=4).contains(&version) { return Err(format!("지원하지 않는 DB schema version: {version}")); }
     let check: String = db.query_row("PRAGMA quick_check", [], |r| r.get(0)).map_err(|e| format!("DB 무결성 확인 실패: {e}"))?;
     if check != "ok" { return Err(format!("DB 무결성 오류: {check}")); }
-    for (number, sql) in [(1, V1), (2, V2), (3, V3)] {
+    for (number, sql) in [(1, V1), (2, V2), (3, V3), (4, V4)] {
         if version >= number { continue; }
         let tx = db.transaction().map_err(|e| format!("DB migration 시작 실패: {e}"))?;
         tx.execute_batch(sql).map_err(|e| format!("DB migration {number} 실패: {e}"))?;
@@ -298,6 +299,69 @@ pub fn preview_test_correction(test_root: String, file_id: String, user_correcti
     Ok(CorrectionPreview { file_id, action:"MOVE".into(), source_path:source, destination_path:normalized_target.to_string_lossy().into_owned(), user_correction, validation_status:"validated_test_root".into(), dry_run_status:"preview_only".into() })
 }
 
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetCorrection {
+    pub stable_item_id: String, pub file_id: String, pub correction_revision: String,
+    pub user_correction: String, pub normalized_action: String, pub source_path: String,
+    pub destination_path: Option<String>, pub snapshot_size_bytes: String,
+    pub snapshot_modified_ns: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedCorrection {
+    pub stable_item_id: String, pub file_id: String, pub normalized_action: String,
+    pub source_path: String, pub destination_path: Option<String>, pub status: String,
+}
+
+#[tauri::command]
+pub fn import_test_corrections(test_root: String, corrections: Vec<SheetCorrection>) -> Result<Vec<ImportedCorrection>, String> {
+    if corrections.is_empty() || corrections.len() > 1000 { return Err("수정 행은 1~1000개만 허용합니다".into()); }
+    let mut db = test_database(&test_root)?;
+    let mut ids = std::collections::HashSet::new();
+    let mut validated = Vec::with_capacity(corrections.len());
+    for row in &corrections {
+        if !ids.insert(&row.stable_item_id) { return Err("중복 수정 item ID".into()); }
+        if row.stable_item_id != format!("inbox:{}",row.file_id) || row.correction_revision.trim().is_empty() || row.user_correction.trim().is_empty() {
+            return Err("수정 ID, revision 또는 내용이 비어 있거나 일치하지 않습니다".into());
+        }
+        if !matches!(row.normalized_action.as_str(),"MOVE"|"HOLD") { return Err("지원하지 않는 구조화 action".into()); }
+        let (path,size,modified,state): (String,i64,i64,String) = db.query_row("SELECT path,size_bytes,modified_ns,state FROM files WHERE id=?1",[&row.file_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).map_err(|_|"알 수 없는 file ID".to_string())?;
+        let expected_size = row.snapshot_size_bytes.parse::<i64>().map_err(|_|"잘못된 파일 크기 snapshot".to_string())?;
+        let expected_modified = row.snapshot_modified_ns.parse::<i64>().map_err(|_|"잘못된 수정시각 snapshot".to_string())?;
+        if state != "present" || path != row.source_path || size != expected_size || modified != expected_modified { return Err("Sheet 수정이 현재 SQLite Index와 충돌합니다. 재검토가 필요합니다".into()); }
+        let source = Path::new(&path);
+        let live = source.symlink_metadata().map_err(|_|"원본 파일이 없습니다".to_string())?;
+        let fixture = Path::new(&crate::paths::bootstrap_test_root(&test_root,true)?.root).join("testdata").canonicalize().map_err(|e|e.to_string())?;
+        if !live.file_type().is_file() || !source.canonicalize().map_err(|e|e.to_string())?.starts_with(&fixture)
+            || live.len() as i64 != size || ns(live.modified()) != modified { return Err("원본 파일이 스캔 이후 변경되었거나 Test Root를 벗어났습니다".into()); }
+        let destination = if row.normalized_action == "MOVE" {
+            let target = row.destination_path.as_deref().filter(|s|!s.trim().is_empty()).ok_or("MOVE 목적지 없음")?;
+            let preview = preview_test_correction(test_root.clone(),row.file_id.clone(),row.user_correction.clone(),target.into())?;
+            if preview.destination_path == path { return Err("원본과 목적지가 같습니다".into()); }
+            Some(preview.destination_path)
+        } else {
+            if row.destination_path.as_deref().is_some_and(|s|!s.trim().is_empty()) { return Err("HOLD에는 목적지를 지정할 수 없습니다".into()); }
+            None
+        };
+        validated.push((row.clone(),destination,size,modified));
+    }
+    let tx = db.transaction().map_err(|e|format!("수정 import transaction 실패: {e}"))?;
+    let mut result = Vec::new();
+    for (row,destination,size,modified) in validated {
+        let prior: Option<(String,String,String,Option<String>)> = tx.query_row("SELECT correction_revision,user_correction,normalized_action,destination_path FROM workspace_corrections WHERE stable_item_id=?1",[&row.stable_item_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(|e|e.to_string())?;
+        if let Some((revision,text,action,old_destination)) = prior {
+            if revision != row.correction_revision || text != row.user_correction || action != row.normalized_action || old_destination != destination { return Err("기존 수정과 충돌합니다. 자동 덮어쓰기를 중단했습니다".into()); }
+        } else {
+            tx.execute("INSERT INTO workspace_corrections(stable_item_id,file_id,correction_revision,user_correction,normalized_action,source_path,destination_path,snapshot_size_bytes,snapshot_modified_ns) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![row.stable_item_id,row.file_id,row.correction_revision,row.user_correction,row.normalized_action,row.source_path,destination,size,modified]).map_err(|e|format!("수정 저장 실패: {e}"))?;
+        }
+        result.push(ImportedCorrection { stable_item_id:row.stable_item_id, file_id:row.file_id, normalized_action:row.normalized_action, source_path:row.source_path, destination_path:destination, status:"imported".into() });
+    }
+    tx.commit().map_err(|e|format!("수정 import commit 실패: {e}"))?;
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,9 +373,9 @@ mod tests {
         let root = disposable("migration");
         let path = database_path(&root);
         let db = open_database(&path).unwrap();
-        assert_eq!(status(&db).unwrap().schema_version,3);
+        assert_eq!(status(&db).unwrap().schema_version,4);
         drop(db);
-        assert_eq!(status(&open_database(&path).unwrap()).unwrap().schema_version,3);
+        assert_eq!(status(&open_database(&path).unwrap()).unwrap().schema_version,4);
         let db = Connection::open(&path).unwrap();
         db.pragma_update(None,"user_version",99).unwrap();
         drop(db);
@@ -449,5 +513,41 @@ mod tests {
         assert_eq!(scan_indexed_test_root(root_str,scan.to_string_lossy().into_owned()).unwrap().file_count,0);
         std::fs::remove_dir_all(root).unwrap();
         std::fs::remove_dir_all(outside).unwrap();
+    }
+    #[test]
+    fn correction_import_is_atomic_idempotent_and_preview_only() {
+        let root = disposable("correction");
+        let root_str = root.to_string_lossy().into_owned();
+        crate::paths::bootstrap_test_root(&root_str,false).unwrap();
+        let inbox = root.join("testdata/Downloads");
+        let destination = root.join("testdata/설계");
+        std::fs::create_dir_all(&inbox).unwrap();
+        std::fs::create_dir_all(&destination).unwrap();
+        let source = inbox.join("한글 설계.txt");
+        std::fs::write(&source,b"synthetic").unwrap();
+        discover_test_inbox(root_str.clone(),inbox.to_string_lossy().into_owned()).unwrap();
+        let file_id = list_test_inbox(root_str.clone()).unwrap()[0].file_id.clone();
+        let db = test_database(&root_str).unwrap();
+        let (size,modified): (i64,i64) = db.query_row("SELECT size_bytes,modified_ns FROM files WHERE id=?1",[&file_id],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
+        drop(db);
+        let row = SheetCorrection { stable_item_id:format!("inbox:{file_id}"), file_id:file_id.clone(), correction_revision:"rev-1".into(), user_correction:"설계 폴더로".into(), normalized_action:"MOVE".into(), source_path:file_id.clone(), destination_path:Some(destination.join("한글 설계.txt").to_string_lossy().into_owned()), snapshot_size_bytes:size.to_string(), snapshot_modified_ns:modified.to_string() };
+        let mut empty = row.clone(); empty.user_correction = "  ".into();
+        assert!(import_test_corrections(root_str.clone(),vec![empty]).is_err());
+        let mut outside = row.clone(); outside.destination_path = Some(std::env::temp_dir().join("outside.txt").to_string_lossy().into_owned());
+        assert!(import_test_corrections(root_str.clone(),vec![outside]).is_err());
+        assert!(import_test_corrections(root_str.clone(),vec![row.clone(),row.clone()]).is_err());
+        let mut invalid = row.clone(); invalid.file_id = "unknown".into(); invalid.stable_item_id = "inbox:unknown".into();
+        assert!(import_test_corrections(root_str.clone(),vec![row.clone(),invalid]).is_err());
+        assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM workspace_corrections",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        assert_eq!(import_test_corrections(root_str.clone(),vec![row.clone()]).unwrap()[0].status,"imported");
+        assert_eq!(import_test_corrections(root_str.clone(),vec![row.clone()]).unwrap().len(),1);
+        let mut conflicting = row.clone(); conflicting.correction_revision = "rev-2".into();
+        assert!(import_test_corrections(root_str.clone(),vec![conflicting]).is_err());
+        assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM workspace_corrections",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+        std::fs::write(&source,b"changed synthetic").unwrap();
+        assert!(import_test_corrections(root_str.clone(),vec![row]).is_err());
+        assert!(source.exists());
+        assert!(!destination.join("한글 설계.txt").exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
