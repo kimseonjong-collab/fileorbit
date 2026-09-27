@@ -19,14 +19,10 @@ if (Test-Path $rootFull) {
 $downloads = Join-Path $rootFull "Downloads"
 $work = Join-Path $rootFull "Work"
 $projects = Join-Path $work "Projects"
-$reference = Join-Path $work "Reference"
-
-New-Item -ItemType Directory -Path $downloads,$projects,$reference -Force | Out-Null
+New-Item -ItemType Directory -Path $downloads,$projects -Force | Out-Null
 
 @{
   "project-note.txt" = "Synthetic FileOrbit UAT project note."
-  "meeting-note.txt" = "Synthetic FileOrbit UAT meeting note."
-  "reference-note.txt" = "Synthetic FileOrbit UAT reference note."
 } | ForEach-Object {
   foreach ($name in $_.Keys) {
     Set-Content -LiteralPath (Join-Path $downloads $name) -Value $_[$name] -Encoding utf8NoBOM
@@ -40,7 +36,7 @@ $manifest = [ordered]@{
   root = $rootFull
   downloads = $downloads
   work = $work
-  files = @("project-note.txt","meeting-note.txt","reference-note.txt")
+  files = @("project-note.txt")
 }
 $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $rootFull "fixture.json") -Encoding utf8NoBOM
 
