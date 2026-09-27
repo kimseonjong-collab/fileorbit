@@ -221,6 +221,32 @@ pub fn indexed_candidates(test_root: String, file_id: String, limit: Option<u32>
     Ok(candidates)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceRow {
+    pub stable_item_id: String, pub file_id: String, pub current_path: String,
+    pub filename: String, pub extension: Option<String>, pub size_bytes: i64,
+    pub modified_ns: i64, pub index_state: String, pub review_state: String,
+    pub related_candidate_status: String, pub candidate_folder: Option<String>,
+    pub related_files: Option<String>, pub recommendation: Option<String>,
+    pub reason: Option<String>, pub confidence: Option<f64>,
+    pub user_correction: Option<String>, pub final_destination: Option<String>,
+    pub action: Option<String>, pub action_status: String, pub batch_id: Option<String>,
+    pub sync_status: String, pub updated_at: String,
+}
+
+// Export-only adapter: no Google authentication, filesystem command, or Sheet value is trusted here.
+#[tauri::command]
+pub fn test_workspace_rows(test_root: String) -> Result<Vec<WorkspaceRow>, String> {
+    let db = test_database(&test_root)?;
+    let mut stmt = db.prepare("SELECT f.id,f.path,f.name,f.extension,f.size_bytes,f.modified_ns,f.state,i.review_state,i.related_state,i.proposed_destination,i.reason,i.confidence,i.action_status,i.updated_at FROM inbox_items i JOIN files f ON f.id=i.file_id ORDER BY f.id").map_err(|e|e.to_string())?;
+    let rows = stmt.query_map([], |r| {
+        let id: String = r.get(0)?;
+        Ok(WorkspaceRow { stable_item_id:format!("inbox:{id}"), file_id:id, current_path:r.get(1)?, filename:r.get(2)?, extension:r.get(3)?, size_bytes:r.get(4)?, modified_ns:r.get(5)?, index_state:r.get(6)?, review_state:r.get(7)?, related_candidate_status:r.get(8)?, candidate_folder:None, related_files:None, recommendation:None, reason:r.get(10)?, confidence:r.get(11)?, user_correction:None, final_destination:r.get(9)?, action:None, action_status:r.get(12)?, batch_id:None, sync_status:"not_synced".into(), updated_at:r.get(13)? })
+    }).map_err(|e|e.to_string())?;
+    rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,6 +344,9 @@ mod tests {
         assert_eq!(item.action_status,"none");
         assert_eq!(item.index_state,"present");
         assert!(!indexed_candidates(root_str.clone(),item.file_id.clone(),None).unwrap().is_empty());
+        let workspace = test_workspace_rows(root_str.clone()).unwrap();
+        assert_eq!(workspace[0].stable_item_id,format!("inbox:{}",item.file_id));
+        assert_eq!(workspace[0].sync_status,"not_synced");
         assert!(source.exists());
         assert!(checked_scan_root(&root_str,&root_str).is_err());
         drop(list_test_inbox(root_str).unwrap());
