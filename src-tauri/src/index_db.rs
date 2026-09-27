@@ -6,6 +6,7 @@ use walkdir::WalkDir;
 
 const V1: &str = include_str!("../migrations/0001_index.sql");
 const V2: &str = include_str!("../migrations/0002_scan_metadata.sql");
+const V3: &str = include_str!("../migrations/0003_inbox.sql");
 
 fn database_path(root: &Path) -> PathBuf { root.join("data").join("fileorbit.db") }
 
@@ -16,10 +17,10 @@ fn open_database(path: &Path) -> Result<Connection, String> {
     db.busy_timeout(std::time::Duration::from_millis(750)).map_err(|e| e.to_string())?;
     db.pragma_update(None, "foreign_keys", "ON").map_err(|e| e.to_string())?;
     let version: i64 = db.pragma_query_value(None, "user_version", |r| r.get(0)).map_err(|e| format!("DB 버전 확인 실패: {e}"))?;
-    if !(0..=2).contains(&version) { return Err(format!("지원하지 않는 DB schema version: {version}")); }
+    if !(0..=3).contains(&version) { return Err(format!("지원하지 않는 DB schema version: {version}")); }
     let check: String = db.query_row("PRAGMA quick_check", [], |r| r.get(0)).map_err(|e| format!("DB 무결성 확인 실패: {e}"))?;
     if check != "ok" { return Err(format!("DB 무결성 오류: {check}")); }
-    for (number, sql) in [(1, V1), (2, V2)] {
+    for (number, sql) in [(1, V1), (2, V2), (3, V3)] {
         if version >= number { continue; }
         let tx = db.transaction().map_err(|e| format!("DB migration 시작 실패: {e}"))?;
         tx.execute_batch(sql).map_err(|e| format!("DB migration {number} 실패: {e}"))?;
@@ -162,6 +163,64 @@ pub fn scan_indexed_test_root(test_root: String, scan_root: String) -> Result<In
     status(&db)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxItem {
+    pub file_id: String, pub filename: String, pub current_path: String,
+    pub extension: Option<String>, pub size_bytes: i64, pub modified_ns: i64,
+    pub index_state: String, pub review_state: String, pub related_state: String,
+    pub proposed_destination: Option<String>, pub reason: Option<String>,
+    pub confidence: Option<f64>, pub action_status: String,
+}
+
+// The caller supplies only a disposable Test Root folder. The existing Downloads UI remains intact.
+#[tauri::command]
+pub fn discover_test_inbox(test_root: String, inbox_path: String) -> Result<Vec<InboxItem>, String> {
+    let inbox = checked_scan_root(&test_root, &inbox_path)?;
+    scan_indexed_test_root(test_root.clone(), inbox.to_string_lossy().into_owned())?;
+    let db = test_database(&test_root)?;
+    db.execute("INSERT OR IGNORE INTO inbox_items(file_id) SELECT id FROM files WHERE folder_id=?1 AND state='present'", [inbox.to_string_lossy().as_ref()]).map_err(|e| format!("Inbox 저장 실패: {e}"))?;
+    list_test_inbox(test_root)
+}
+
+#[tauri::command]
+pub fn list_test_inbox(test_root: String) -> Result<Vec<InboxItem>, String> {
+    let db = test_database(&test_root)?;
+    let mut stmt = db.prepare("SELECT f.id,f.name,f.path,f.extension,f.size_bytes,f.modified_ns,f.state,i.review_state,i.related_state,i.proposed_destination,i.reason,i.confidence,i.action_status FROM inbox_items i JOIN files f ON f.id=i.file_id ORDER BY f.path").map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |r| Ok(InboxItem { file_id:r.get(0)?, filename:r.get(1)?, current_path:r.get(2)?, extension:r.get(3)?, size_bytes:r.get(4)?, modified_ns:r.get(5)?, index_state:r.get(6)?, review_state:r.get(7)?, related_state:r.get(8)?, proposed_destination:r.get(9)?, reason:r.get(10)?, confidence:r.get(11)?, action_status:r.get(12)? })).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelatedCandidate { pub candidate: String, pub candidate_type: String, pub score: f64, pub evidence: String }
+
+fn tokens(s: &str) -> Vec<String> {
+    s.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|s| s.chars().count() >= 2).map(str::to_owned).collect()
+}
+
+#[tauri::command]
+pub fn indexed_candidates(test_root: String, file_id: String, limit: Option<u32>) -> Result<Vec<RelatedCandidate>, String> {
+    let db = test_database(&test_root)?;
+    let (name, ext, modified): (String,Option<String>,i64) = db.query_row("SELECT name,extension,modified_ns FROM files WHERE id=?1 AND state='present'", [&file_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e| format!("Index file ID 조회 실패: {e}"))?;
+    let words = tokens(&name);
+    let mut candidates = Vec::new();
+    let mut stmt = db.prepare("SELECT path,name,'folder',NULL,0 FROM folders WHERE state='present' UNION ALL SELECT path,name,'file',extension,modified_ns FROM files WHERE state='present' AND id!=?1").map_err(|e|e.to_string())?;
+    let rows = stmt.query_map([&file_id], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<String>>(3)?,r.get::<_,i64>(4)?))).map_err(|e|e.to_string())?;
+    for row in rows {
+        let (path, candidate_name, kind, candidate_ext, candidate_modified) = row.map_err(|e|e.to_string())?;
+        let hay = tokens(&format!("{path} {candidate_name}"));
+        let common = words.iter().filter(|w| hay.contains(w)).count();
+        let same_ext = kind == "file" && ext.is_some() && ext == candidate_ext;
+        let near_date = kind == "file" && modified.abs_diff(candidate_modified) < 7 * 24 * 3600 * 1_000_000_000;
+        let score = (common as f64 * 0.25 + if same_ext {0.10} else {0.0} + if near_date {0.05} else {0.0}).min(1.0);
+        if score > 0.0 { candidates.push(RelatedCandidate { candidate:path, candidate_type:kind, score, evidence:format!("공통 단어 {common}개; 확장자 일치: {same_ext}; 날짜 근접: {near_date}") }); }
+    }
+    candidates.sort_by(|a,b| b.score.total_cmp(&a.score).then_with(||a.candidate.cmp(&b.candidate)));
+    candidates.truncate(limit.unwrap_or(10).clamp(1,100) as usize);
+    Ok(candidates)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,9 +232,9 @@ mod tests {
         let root = disposable("migration");
         let path = database_path(&root);
         let db = open_database(&path).unwrap();
-        assert_eq!(status(&db).unwrap().schema_version,2);
+        assert_eq!(status(&db).unwrap().schema_version,3);
         drop(db);
-        assert_eq!(status(&open_database(&path).unwrap()).unwrap().schema_version,2);
+        assert_eq!(status(&open_database(&path).unwrap()).unwrap().schema_version,3);
         let db = Connection::open(&path).unwrap();
         db.pragma_update(None,"user_version",99).unwrap();
         drop(db);
@@ -235,6 +294,33 @@ mod tests {
         assert_eq!(indexed_files(root_str.clone(),None,None,None,None).unwrap()[0].state,"missing");
         assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM files",[],|r|r.get::<_,i64>(0)).unwrap(),3);
         assert!(checked_scan_root(&root_str,&root_str).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn inbox_and_candidates_are_index_only_and_do_not_move_files() {
+        let root = disposable("inbox");
+        let root_str = root.to_string_lossy().into_owned();
+        crate::paths::bootstrap_test_root(&root_str,false).unwrap();
+        let fixtures = root.join("testdata");
+        let downloads = fixtures.join("Downloads");
+        let project = fixtures.join("D-Project/설계");
+        std::fs::create_dir_all(&downloads).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        let source = downloads.join("D-Project 설계 (1).pdf");
+        std::fs::write(&source,b"synthetic").unwrap();
+        std::fs::write(project.join("D-Project 설계 도면.pdf"),b"synthetic").unwrap();
+        scan_indexed_test_root(root_str.clone(),fixtures.to_string_lossy().into_owned()).unwrap();
+        let inbox = downloads.to_string_lossy().into_owned();
+        assert_eq!(discover_test_inbox(root_str.clone(),inbox.clone()).unwrap().len(),1);
+        assert_eq!(discover_test_inbox(root_str.clone(),inbox).unwrap().len(),1);
+        let item = &list_test_inbox(root_str.clone()).unwrap()[0];
+        assert_eq!(item.review_state,"new");
+        assert_eq!(item.action_status,"none");
+        assert_eq!(item.index_state,"present");
+        assert!(!indexed_candidates(root_str.clone(),item.file_id.clone(),None).unwrap().is_empty());
+        assert!(source.exists());
+        assert!(checked_scan_root(&root_str,&root_str).is_err());
+        drop(list_test_inbox(root_str).unwrap());
         std::fs::remove_dir_all(root).unwrap();
     }
 }
