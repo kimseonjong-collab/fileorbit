@@ -6,7 +6,8 @@ permissions:
   contents: write
 jobs:
   publish:
-    if: contains(github.event.head_commit.message, '[publish-v0.5-rc]')
+    if: false # RC2 is frozen; intentionally create/update a new RC workflow only after a runtime defect requires RC3
+    # historical trigger: contains(github.event.head_commit.message, '[publish-v0.5-rc]')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
