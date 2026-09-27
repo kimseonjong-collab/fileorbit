@@ -54,6 +54,21 @@ class IndexSchemaTests(unittest.TestCase):
                 self.conn.execute("INSERT INTO folders(id,root_id,path,name) VALUES('bad','missing','/synthetic','synthetic')")
         self.assertEqual(self.conn.execute("SELECT count(*) FROM scan_roots").fetchone()[0], 0)
 
+    def test_three_thousand_metadata_rows_and_reopen(self):
+        self.migrate()
+        with self.conn:
+            self.conn.execute("INSERT INTO scan_roots(id,path) VALUES('root','/synthetic')")
+            self.conn.execute("INSERT INTO folders(id,root_id,path,name) VALUES('folder','root','/synthetic','synthetic')")
+            self.conn.executemany("INSERT INTO files(id,root_id,folder_id,path,name,size_bytes,modified_ns) VALUES(?,?,?,?,?,?,?)",
+                ((str(i),'root','folder',f'/synthetic/file-{i}.txt',f'file-{i}.txt',i,1) for i in range(3000)))
+        with self.conn:
+            self.conn.executemany("UPDATE files SET size_bytes=? WHERE id=?", ((i+1,str(i)) for i in range(3000)))
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM files WHERE path LIKE '/synthetic/%'").fetchone()[0],3000)
+        self.assertEqual(self.conn.execute("SELECT size_bytes FROM files WHERE name='file-2999.txt'").fetchone()[0],3000)
+        self.conn.close()
+        self.conn = sqlite3.connect(self.db)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM files").fetchone()[0],3000)
+
 
 if __name__ == "__main__":
     unittest.main()

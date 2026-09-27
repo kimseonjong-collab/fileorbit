@@ -37,11 +37,28 @@ pub fn initialize_app(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 fn test_database(test_root: &str) -> Result<Connection, String> {
+    checked_test_root(test_root)?;
     let paths = crate::paths::bootstrap_test_root(test_root, false)?;
     open_database(Path::new(&paths.database))
 }
 
+fn checked_test_root(test_root: &str) -> Result<(), String> {
+    let candidate = crate::paths::bootstrap_test_root(test_root, true)?;
+    let root = Path::new(&candidate.root);
+    let temp = std::env::temp_dir().canonicalize().map_err(|e| e.to_string())?;
+    if root.starts_with(&temp) { return Ok(()); }
+    #[cfg(windows)]
+    {
+        let normalized = root.to_string_lossy().to_ascii_lowercase().replace('/', "\\");
+        if normalized.starts_with(r"\\?\c:\fileorbit-test\") || normalized.starts_with(r"c:\fileorbit-test\") {
+            return Ok(());
+        }
+    }
+    Err("Index Test Root는 OS 임시 폴더 또는 C:\\FileOrbit-Test 아래에만 허용합니다".into())
+}
+
 fn checked_scan_root(test_root: &str, scan_root: &str) -> Result<PathBuf, String> {
+    checked_test_root(test_root)?;
     let test = crate::paths::bootstrap_test_root(test_root, true)?;
     let test = Path::new(&test.root).canonicalize().map_err(|e| format!("Test Root 확인 실패: {e}"))?;
     let fixtures = test.join("testdata").canonicalize().map_err(|e| format!("testdata 확인 실패: {e}"))?;
