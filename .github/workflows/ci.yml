@@ -58,11 +58,30 @@ jobs:
           for p in package.json package-lock.json vite.config.ts src/App.tsx src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/src/lib.rs src-tauri/src/main.rs; do
             test "$(git rev-parse "v0.5.0-rc.2:$p")" = "$(git rev-parse "HEAD:$p")" || { echo "Runtime drift from frozen RC2: $p"; exit 1; }
           done
-      - name: Guard V0.5 stable remains unauthorized
+      - name: Guard V0.5 acceptance evidence
         run: |
-          grep -F 'Status: **NOT YET ACCEPTED**' docs/V0.5_WINDOWS_ACCEPTANCE.md
-          grep -F 'V0.5_STABLE_AUTHORIZED=false' docs/V0.5_WINDOWS_ACCEPTANCE.md
-          test ! -e .github/workflows/release-v0.5-stable.yml
+          node - <<'NODE'
+          const fs=require('fs');
+          const p='docs/V0.5_WINDOWS_ACCEPTANCE.md';
+          const s=fs.readFileSync(p,'utf8');
+          const authorized=s.includes('V0.5_STABLE_AUTHORIZED=true');
+          if(!authorized){
+            if(!s.includes('Status: **NOT YET ACCEPTED**')) throw new Error('Blocked acceptance status marker missing');
+            if(!s.includes('V0.5_STABLE_AUTHORIZED=false')) throw new Error('Blocked authorization marker missing');
+            if(fs.existsSync('.github/workflows/release-v0.5-stable.yml')) throw new Error('Stable publisher must not exist before acceptance');
+            process.exit(0);
+          }
+          if(!s.includes('Status: **ACCEPTED**')) throw new Error('Authorized record must be ACCEPTED');
+          for(let i=1;i<=8;i++){
+            const row=new RegExp('\\|\\s*'+i+'\\s*\\|[^\\n]*\\|\\s*PASS\\s*\\|');
+            if(!row.test(s)) throw new Error('Checkpoint '+i+' is not PASS');
+          }
+          for(const label of ['Installer type:','Installer SHA-256:','Windows version:','Test start/completion time:','Disposable fixture root:']){
+            const line=s.split(/\\r?\\n/).find(x=>x.includes(label));
+            if(!line || /TBD\s*$/.test(line)) throw new Error(label+' is incomplete');
+          }
+          if(!s.includes('5171d465137a724a1d76eae1354478b10fc3560f')) throw new Error('Frozen RC2 source identity missing');
+          NODE
       - name: Guard frozen V0.5 installed-GUI checkpoint
         run: |
           grep -F 'v0.5.0-rc.2' docs/V0.5_WINDOWS_RUNTIME_CHECKPOINT.md
