@@ -58,6 +58,16 @@ jobs:
           for p in package.json package-lock.json vite.config.ts src/App.tsx src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/src/lib.rs src-tauri/src/main.rs; do
             test "$(git rev-parse "v0.5.0-rc.2:$p")" = "$(git rev-parse "HEAD:$p")" || { echo "Runtime drift from frozen RC2: $p"; exit 1; }
           done
+      - name: Guard release-control files against unreviewed runtime coupling
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const rc=fs.readFileSync('.github/workflows/release-v0.5-rc.yml','utf8');
+          if(!rc.includes('if: false # RC2 is frozen')) throw new Error('Frozen RC2 publisher was re-enabled');
+          if(fs.existsSync('.github/workflows/release-v0.5-stable.yml')) throw new Error('V0.5 stable publisher exists before installed-GUI acceptance');
+          const acceptance=fs.readFileSync('docs/V0.5_WINDOWS_ACCEPTANCE.md','utf8');
+          if(acceptance.includes('V0.5_STABLE_AUTHORIZED=true') && !acceptance.includes('Status: **ACCEPTED**')) throw new Error('Authorization/status mismatch');
+          NODE
       - name: Guard V0.5 acceptance evidence
         run: |
           node - <<'NODE'
