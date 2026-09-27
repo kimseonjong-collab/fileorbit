@@ -59,7 +59,7 @@ fn safe_test_root(value: &str) -> Result<PathBuf, String> {
         }
     }
     #[cfg(windows)]
-    if root.to_string_lossy().eq_ignore_ascii_case(r"C:\FileOrbit") {
+    if root.to_string_lossy().trim_start_matches(r"\\?\").eq_ignore_ascii_case(r"C:\FileOrbit") {
         return Err("실제 표준 경로는 Test Root로 사용할 수 없습니다".into());
     }
     Ok(root)
