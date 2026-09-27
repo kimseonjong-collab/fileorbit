@@ -40,3 +40,4 @@ jobs:
           $checksumPath = "SHA256SUMS.txt"
           $checksums | Set-Content -Encoding ascii $checksumPath
           gh release create $tag $msi.FullName $exe.FullName $checksumPath --target "${{ github.sha }}" --title "FileOrbit V0.5 RC3" --notes $notes --prerelease
+
