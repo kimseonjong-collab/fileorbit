@@ -59,8 +59,11 @@ fn safe_test_root(value: &str) -> Result<PathBuf, String> {
         }
     }
     #[cfg(windows)]
-    if root.to_string_lossy().trim_start_matches(r"\\?\").eq_ignore_ascii_case(r"C:\FileOrbit") {
-        return Err("실제 표준 경로는 Test Root로 사용할 수 없습니다".into());
+    {
+        let normalized = root.to_string_lossy().trim_start_matches(r"\\?\").to_ascii_lowercase();
+        if normalized == r"c:\fileorbit" || normalized.starts_with(r"c:\fileorbit\") {
+            return Err("실제 표준 경로와 그 하위 폴더는 Test Root로 사용할 수 없습니다".into());
+        }
     }
     Ok(root)
 }
@@ -123,5 +126,6 @@ mod tests {
     fn rejects_actual_standard_root_with_case_variation() {
         assert!(bootstrap_test_root(r"C:\FileOrbit", true).is_err());
         assert!(bootstrap_test_root(r"c:\fileorbit", true).is_err());
+        assert!(bootstrap_test_root(r"C:\FileOrbit\testdata", true).is_err());
     }
 }
