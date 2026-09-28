@@ -46,13 +46,13 @@ pub fn sync_inbox<P: SheetProvider>(provider: &mut P, local: &[ReviewRow]) -> Re
     let remote = provider.inbox_rows()?;
     let mut seen = HashSet::new();
     for row in &remote {
-        if row.stable_item_id.is_empty() || !seen.insert(&row.stable_item_id) {
+        if row.file_id.is_empty() || row.stable_item_id != format!("inbox:{}", row.file_id) || !seen.insert(&row.stable_item_id) {
             return Err("Sheet 중복 또는 빈 stable item ID: 동기화 중단".into());
         }
     }
     let mut local_seen = HashSet::new();
     for row in local {
-        if row.stable_item_id.is_empty() || !local_seen.insert(&row.stable_item_id) {
+        if row.file_id.is_empty() || row.stable_item_id != format!("inbox:{}", row.file_id) || !local_seen.insert(&row.stable_item_id) {
             return Err("SQLite export 중복 또는 빈 stable item ID: 동기화 중단".into());
         }
     }
@@ -171,5 +171,19 @@ mod tests {
         assert_eq!(first.inserted,1);
         assert_eq!(plan_candidates(&[c.clone()],&rows).unwrap().0.unchanged,1);
         assert!(plan_candidates(&[c.clone()],&[c.clone(),c]).is_err());
+    }
+    #[test]
+    fn malformed_sheet_or_export_identity_fails_before_any_upsert() {
+        let good = fixture("good");
+        let mut bad = fixture("bad");
+        bad.stable_item_id = "inbox:other".into();
+        let mut provider = FakeSheet { rows:vec![bad.clone()], fail_write:false };
+        assert!(sync_inbox(&mut provider,&[good.clone()]).is_err());
+        assert_eq!(provider.rows,vec![bad]);
+        provider.rows.clear();
+        let mut malformed = fixture("bad");
+        malformed.file_id = "other".into();
+        assert!(sync_inbox(&mut provider,&[good,malformed]).is_err());
+        assert!(provider.rows.is_empty());
     }
 }
