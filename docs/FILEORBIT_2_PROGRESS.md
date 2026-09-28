@@ -8,7 +8,7 @@
 | 4 Downloads Inbox | Synthetic index discovery implemented | PASS in same CI | Upstream manual gate pending | No automatic move; not ACCEPTED |
 | 5 Candidate Engine | Deterministic SQLite-only search implemented | PASS in same CI | Upstream manual gate pending | Candidates only; not ACCEPTED |
 | 6 Google Sheet Workspace | [FileOrbit_AI_Workspace](https://docs.google.com/spreadsheets/d/1HWdkfe0QO7Dtvppq4WFc4oAEyPapnov0Qn0v0W9Th7I/edit) created; Test Root export and preview model | PASS in same CI | Upstream manual gate pending | SQLite remains source of truth; live sync not connected; not ACCEPTED |
-| 7 Five-stage Cockpit | Test Root Observe/Review/Decide/Preview/Verify slice implemented | Frontend, SQLite, Linux Rust and Windows fixture PASS in CI 36396019458; Windows checkpoint pending | Upstream manual gate pending | No Execute action wired; not ACCEPTED |
+| 7 Five-stage Cockpit | Test Root Observe/Review/Decide/Preview/Verify slice implemented | Frontend, SQLite, Linux/Windows Rust, Windows fixture, MSI/NSIS PASS in CI 36396227820 | Upstream manual gate pending | No Execute action wired; not ACCEPTED |
 
 ## Current Phase 3 slice
 
@@ -28,4 +28,5 @@
 - CI [36308475990](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36308475990) passed frontend, Linux and Windows Rust tests, Windows fixture, MSI and NSIS. Phase 2 **MANUAL_WINDOWS_E2E_PENDING** remains the upstream manual gate; installed-app interactive test was not run by CI.
 - Commits: Phase 3 `ee745c6`, Phase 4/5 `763984b`, Phase 6 export `d8945b1`, bulk/symlink/preview `a03431d`. [CI 36353862539](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36353862539) passed frontend, Linux/Windows Rust, Windows fixture, MSI and NSIS.
 - Actual business files changed: **0**; `C:\FileOrbit` changed: **0**; `main` changed: **0**.
-- Next: run a Windows checkpoint on this documentation update and verify Windows Rust, MSI and NSIS; then one disposable Windows installed-app interactive E2E with the user. Do not mark Phase 2 or later phases ACCEPTED until the manual gate passes.
+- Final Windows checkpoint [36396227820](https://github.com/kimseonjong-collab/fileorbit/actions/runs/36396227820) passed frontend build, SQLite schema verification, Linux and Windows Rust tests, disposable Windows fixture, MSI and NSIS build and artifact upload. Phase 2 remains **MANUAL_WINDOWS_E2E_PENDING**. Actual business files changed: **0**; `C:\FileOrbit` changed: **0**; `main` changed: **0**.
+- Next: live Google transport remains `GOOGLE_LIVE_SYNC_PENDING`; perform one disposable Windows installed-app interactive E2E before any Phase 2+ ACCEPTED decision.
