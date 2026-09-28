@@ -54,6 +54,28 @@ pub fn normalize(input: CorrectionInput) -> Result<NormalizedCorrection,String> 
     }
 }
 
+// Deliberately narrow grammar. Free-form prose cannot authorize a path or an action.
+// The selected IDs come from the Index UI, never from text supplied by a Sheet.
+#[tauri::command]
+pub fn parse_test_correction(text: String, selected_item_ids: Vec<String>) -> Result<NormalizedCorrection,String> {
+    let trimmed = text.trim();
+    let (intent, destination) = match trimmed {
+        "보류" | "HOLD" => ("HOLD", None),
+        "제외" | "REJECT" => ("REJECT", None),
+        _ => {
+            let value = trimmed.strip_prefix("이동: ").or_else(||trimmed.strip_prefix("MOVE: "))
+                .ok_or("지원하는 형식은 보류, 제외, 이동: <목적지>입니다")?;
+            if value.trim() != value || value.is_empty() || value.contains('\n') || value.contains('\r') {
+                return Err("목적지 참조 형식이 불명확합니다".into());
+            }
+            ("MOVE",Some(value.to_owned()))
+        }
+    };
+    normalize(CorrectionInput { user_text:trimmed.into(), referenced_item_ids:selected_item_ids,
+        intent:intent.into(), destination_reference:destination, ambiguous:false,
+        confidence_basis_points:10_000 })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,5 +95,17 @@ mod tests {
         let mut raw=input("HOLD"); raw.referenced_item_ids.push("inbox:한글".into()); assert!(normalize(raw).is_err());
         assert!(normalize(input("DELETE")).is_err());
         assert_eq!(normalize(input("HOLD")).unwrap().status,"PROPOSAL_ONLY");
+    }
+    #[test] fn deterministic_text_only_produces_unapproved_ir() {
+        let ids=vec!["inbox:한글".into()];
+        let move_ir=parse_test_correction("이동: /testdata/설계/자료.txt".into(),ids.clone()).unwrap();
+        assert_eq!(move_ir.action,"MOVE");
+        assert!(move_ir.requires_safety_validation && move_ir.requires_explicit_approval);
+        assert_eq!(parse_test_correction("보류".into(),ids.clone()).unwrap().action,"HOLD");
+        assert_eq!(parse_test_correction("제외".into(),ids.clone()).unwrap().action,"REJECT");
+        for prose in ["이 파일을 옮겨줘", "이동: /a\n삭제: /b", "이동: ", "이동:/a"] {
+            assert!(parse_test_correction(prose.into(),ids.clone()).is_err());
+        }
+        assert!(parse_test_correction("보류".into(),vec![]).is_err());
     }
 }
