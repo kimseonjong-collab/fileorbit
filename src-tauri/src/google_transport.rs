@@ -11,6 +11,46 @@ pub const CORRECTIONS_TAB: &str = "Corrections";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TransportError { AuthRequired, Network, RemoteConflict, Malformed(String) }
 
+// An adapter owns the OAuth flow; this interface never logs or persists a token.
+pub trait TokenProvider {
+    fn access_token(&mut self) -> Result<String, TransportError>;
+}
+
+pub struct Page<T> { pub rows: Vec<T>, pub next_page_token: Option<String> }
+
+pub trait PagedSource<T> {
+    fn read_page(&mut self, page_token: Option<&str>) -> Result<Page<T>, TransportError>;
+}
+
+// A complete bounded snapshot is required before conflict planning or SQLite import.
+// Repeated page tokens and partial failures fail closed; no partial rows escape.
+pub fn read_bounded_pages<T, P: PagedSource<T>>(source: &mut P, max_pages: usize, max_rows: usize) -> Result<Vec<T>, TransportError> {
+    if max_pages == 0 || max_rows == 0 { return Err(TransportError::Malformed("pagination limit missing".into())); }
+    let mut rows = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut next: Option<String> = None;
+    for _ in 0..max_pages {
+        let page = {
+            let mut result = None;
+            for attempt in 0..3 {
+                match source.read_page(next.as_deref()) {
+                    Err(TransportError::Network) if attempt < 2 => continue,
+                    other => {result = Some(other); break;}
+                }
+            }
+            result.expect("bounded retry result")?
+        };
+        if page.rows.len() > max_rows.saturating_sub(rows.len()) { return Err(TransportError::Malformed("row limit exceeded".into())); }
+        rows.extend(page.rows);
+        match page.next_page_token {
+            None => return Ok(rows),
+            Some(token) if token.is_empty() || !seen.insert(token.clone()) => return Err(TransportError::Malformed("repeated page token".into())),
+            Some(token) => next = Some(token),
+        }
+    }
+    Err(TransportError::Malformed("incomplete paginated response".into()))
+}
+
 pub trait ReviewTransport {
     fn read_inbox(&mut self) -> Result<Vec<ReviewRow>, TransportError>;
     fn insert_inbox(&mut self, row: &ReviewRow) -> Result<(), TransportError>;
@@ -172,6 +212,30 @@ fn candidate_snapshot<T: CandidateTransport>(transport: &mut T) -> Result<Vec<Ca
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct FakePages { calls: usize, fail_once: bool, repeat: bool, partial: bool }
+    impl PagedSource<String> for FakePages {
+        fn read_page(&mut self, token: Option<&str>) -> Result<Page<String>,TransportError> {
+            self.calls+=1;
+            if self.fail_once { self.fail_once=false; return Err(TransportError::Network); }
+            match token {
+                None => Ok(Page {rows:vec!["first".into()],next_page_token:Some("page-2".into())}),
+                Some("page-2") if self.partial => Err(TransportError::AuthRequired),
+                Some("page-2") => Ok(Page {rows:vec!["second".into()],next_page_token:self.repeat.then(||"page-2".into())}),
+                _ => Err(TransportError::Malformed("unknown token".into())),
+            }
+        }
+    }
+    #[test] fn paginated_snapshot_retries_network_and_requires_completion() {
+        let mut ok=FakePages {calls:0,fail_once:true,repeat:false,partial:false};
+        assert_eq!(read_bounded_pages(&mut ok,3,2).unwrap(),vec!["first","second"]);
+        assert_eq!(ok.calls,3);
+        let mut repeated=FakePages {calls:0,fail_once:false,repeat:true,partial:false};
+        assert!(matches!(read_bounded_pages(&mut repeated,3,2),Err(TransportError::Malformed(_))));
+        let mut partial=FakePages {calls:0,fail_once:false,repeat:false,partial:true};
+        assert_eq!(read_bounded_pages(&mut partial,3,2),Err(TransportError::AuthRequired));
+        let mut bounded=FakePages {calls:0,fail_once:false,repeat:false,partial:false};
+        assert!(matches!(read_bounded_pages(&mut bounded,1,2),Err(TransportError::Malformed(_))));
+    }
     #[derive(Default)]
     struct Fake { rows:Vec<ReviewRow>, fail_after_insert:bool, reads:usize }
     impl ReviewTransport for Fake {
