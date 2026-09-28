@@ -10,8 +10,9 @@ type Preview={sourcePath:string;destinationPath:string;validationStatus:string;d
 type SyncReport={inserted:number;updated:number;unchanged:number;conflicts:string[]};
 type SyncPlan={report:SyncReport;rows:unknown[]};
 type ActionDryRun={stableItemId:string;action:string;sourcePath:string;destinationPath:string|null;validationStatus:string;expectedChange:string;undoPossible:boolean;executionStatus:string};
-type BatchDryRun={batchId:string;actions:ActionDryRun[];validationStatus:string;executionStatus:string;undoStatus:string};
+type BatchDryRun={batchId:string;actions:ActionDryRun[];validationStatus:string;executionStatus:string;undoStatus:string;undoEligibleCount:number;reverseOrder:string[];verificationState:string};
 type NaturalIR={referencedItemIds:string[];action:string;destinationReference:string|null;status:string;requiresSafetyValidation:boolean;requiresExplicitApproval:boolean};
+type DestinationResolution={status:"RESOLVED"|"AMBIGUOUS"|"NOT_FOUND"|"NOT_ALLOWED";folderId:string|null;destinationPath:string|null;matchedCount:number;reason:string};
 
 export function IndexPanel({isWeb}:{isWeb:boolean}){
   const [appStatus,setAppStatus]=useState<Status|null>(null);
@@ -29,6 +30,7 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
   const [revision,setRevision]=useState("");
   const [naturalText,setNaturalText]=useState("");
   const [naturalIR,setNaturalIR]=useState<NaturalIR|null>(null);
+  const [destinationResolution,setDestinationResolution]=useState<DestinationResolution|null>(null);
   const [preview,setPreview]=useState<Preview|null>(null);
   const [inboxSync,setInboxSync]=useState<SyncReport|null>(null);
   const [candidateSync,setCandidateSync]=useState<SyncReport|null>(null);
@@ -101,8 +103,14 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
     finally{setBusy(false)}
   }
   async function interpretCorrection(){
-    setBusy(true);setError("");setNaturalIR(null);
-    try{setNaturalIR(await invoke<NaturalIR>("parse_test_correction",{text:naturalText,selectedItemIds:[`inbox:${selectedId}`]}))}
+    setBusy(true);setError("");setNaturalIR(null);setDestinationResolution(null);
+    try{
+      const ir=await invoke<NaturalIR>("parse_test_correction",{text:naturalText,selectedItemIds:[`inbox:${selectedId}`]});
+      setNaturalIR(ir);
+      if(ir.action==="MOVE"&&ir.destinationReference){
+        setDestinationResolution(await invoke<DestinationResolution>("resolve_test_destination",{testRoot,fileId:selectedId,reference:ir.destinationReference}));
+      }
+    }
     catch{setError("문장 형식이 불명확합니다. 보류, 제외, 이동: <목적지> 중 하나로 입력하십시오. 저장·실행은 없었습니다.")}
     finally{setBusy(false)}
   }
@@ -132,15 +140,18 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
       <button disabled={busy||!correctionText.trim()||(decision==="MOVE"&&!destination.trim())} onClick={saveCorrection}>제안 저장·안전검증</button>
     </div>}
     {!isWeb&&selectedId&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-      <input aria-label="제한된 자연어 수정" placeholder="보류 / 제외 / 이동: <목적지>" value={naturalText} onChange={e=>{setNaturalText(e.target.value);setNaturalIR(null)}}/>
+      <input aria-label="제한된 자연어 수정" placeholder="보류 / 제외 / 이동: <폴더 ID 또는 정확한 폴더명>" value={naturalText} onChange={e=>{setNaturalText(e.target.value);setNaturalIR(null);setDestinationResolution(null)}}/>
       <button disabled={busy||!naturalText.trim()} onClick={interpretCorrection}>문장 해석 미리보기</button>
       {naturalIR&&<p>{naturalIR.action} · {naturalIR.destinationReference??"목적지 없음"} · {naturalIR.status} · 별도 안전검증·명시적 승인 필요 · 저장·실행 안 함</p>}
+      {destinationResolution&&<p role="status">목적지 참조 {destinationResolution.status} · {destinationResolution.folderId??"폴더 확정 없음"} · {destinationResolution.matchedCount}건 · {destinationResolution.reason} · {destinationResolution.destinationPath??"경로 없음"}</p>}
     </div>}
     <h4>4 Execute · Dry-run</h4>
     <p>{preview?`${preview.sourcePath} → ${preview.destinationPath} · ${preview.validationStatus} · ${preview.dryRunStatus}`:"실행 전용 버튼 없음 · Test Root 제안만 검증"}</p>
     {actionDryRun&&<p>재검증 {actionDryRun.action} · {actionDryRun.validationStatus} · {actionDryRun.expectedChange} · Undo 가능 {actionDryRun.undoPossible?"예":"아니오"} · {actionDryRun.executionStatus}</p>}
     {corrections.length>0&&<button disabled={busy||corrections.length>100} onClick={dryRunBatch}>저장 제안 전체 Batch Dry-run</button>}
-    {batchDryRun&&<p>Batch {batchDryRun.batchId} · {batchDryRun.actions.length}건 · {batchDryRun.validationStatus} · {batchDryRun.executionStatus} · Undo {batchDryRun.undoStatus}</p>}
+    {batchDryRun&&<div role="status">Batch {batchDryRun.batchId} · {batchDryRun.actions.length}건 · {batchDryRun.validationStatus} · {batchDryRun.executionStatus} · 검증 {batchDryRun.verificationState} · Undo {batchDryRun.undoStatus} · 대상 {batchDryRun.undoEligibleCount}건 · 역순 {batchDryRun.reverseOrder.length?batchDryRun.reverseOrder.join(" → "):"없음 (실행 전)"}
+      <ol>{batchDryRun.actions.map((a,i)=><li key={a.stableItemId}>{i+1}. {a.action} · {a.stableItemId} · {a.validationStatus} · {a.executionStatus} · Undo {a.executionStatus==="NOT_EXECUTED"?"NOT_APPLICABLE":"재검증 필요"}</li>)}</ol>
+    </div>}
     <h4>5 Verify / Undo · 기록</h4>
     {corrections.length>0?<div>{corrections.map(c=><div key={c.stableItemId}>{c.normalizedAction} · {c.status} · {c.sourcePath}{c.destinationPath?` → ${c.destinationPath}`:""} · 실제 실행 없음 <button disabled={busy} onClick={()=>dryRunCorrection(c.stableItemId)}>저장 제안 Dry-run 재검증</button></div>)}</div>:<p>실행·Undo 기록 없음</p>}
     {error&&<p role="alert">{error}</p>}

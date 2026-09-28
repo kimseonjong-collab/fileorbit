@@ -299,6 +299,48 @@ pub struct CorrectionPreview {
     pub validation_status: String, pub dry_run_status: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DestinationResolution {
+    pub status: String, pub folder_id: Option<String>, pub destination_path: Option<String>,
+    pub matched_count: usize, pub reason: String,
+}
+
+// A text reference is never interpreted as a filesystem path. Folder IDs and exact names
+// are resolved against the current disposable SQLite index, then checked on disk.
+#[tauri::command]
+pub fn resolve_test_destination(test_root: String, file_id: String, reference: String) -> Result<DestinationResolution, String> {
+    let db = test_database(&test_root)?;
+    let source: String = db.query_row("SELECT path FROM files WHERE id=?1 AND state='present'",[&file_id],|r|r.get(0)).map_err(|_|"현재 Index에 원본 파일이 없습니다".to_string())?;
+    let reference = reference.trim();
+    if reference.is_empty() || (!reference.starts_with("folder:") && (reference.contains('/') || reference.contains('\\') || reference == "." || reference == "..")) {
+        return Ok(DestinationResolution {status:"NOT_ALLOWED".into(),folder_id:None,destination_path:None,matched_count:0,reason:"경로 문자열은 허용하지 않습니다. 폴더 ID 또는 정확한 폴더 이름을 사용하십시오".into()});
+    }
+    let by_id = reference.strip_prefix("folder:");
+    let mut stmt = db.prepare(if by_id.is_some() {
+        "SELECT id,path FROM folders WHERE state='present' AND id=?1 LIMIT 2"
+    } else {
+        "SELECT id,path FROM folders WHERE state='present' AND name=?1 LIMIT 3"
+    }).map_err(|e|e.to_string())?;
+    let query = by_id.unwrap_or(reference);
+    let matches = stmt.query_map([query],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+    if matches.is_empty() { return Ok(DestinationResolution {status:"NOT_FOUND".into(),folder_id:None,destination_path:None,matched_count:0,reason:"현재 Index에 일치하는 폴더가 없습니다".into()}); }
+    if matches.len() > 1 { return Ok(DestinationResolution {status:"AMBIGUOUS".into(),folder_id:None,destination_path:None,matched_count:matches.len(),reason:"같은 이름의 폴더가 여러 개입니다. folder:<ID>를 지정하십시오".into()}); }
+    let (id,path) = &matches[0];
+    let fixture = Path::new(&crate::paths::bootstrap_test_root(&test_root,true)?.root).join("testdata").canonicalize().map_err(|e|e.to_string())?;
+    let folder = Path::new(path);
+    let meta = folder.symlink_metadata().map_err(|_|"Index 폴더가 사라졌습니다. 재스캔하십시오".to_string())?;
+    let canonical = folder.canonicalize().map_err(|e|e.to_string())?;
+    if !meta.file_type().is_dir() || meta.file_type().is_symlink() || canonical == fixture || !canonical.starts_with(&fixture) {
+        return Ok(DestinationResolution {status:"NOT_ALLOWED".into(),folder_id:None,destination_path:None,matched_count:1,reason:"허용된 Test Root 하위의 일반 폴더가 아닙니다".into()});
+    }
+    let filename = Path::new(&source).file_name().ok_or("원본 파일명 없음")?;
+    let target = canonical.join(filename).to_string_lossy().into_owned();
+    // Full source snapshot and target collision validation is still required at Dry-run time.
+    preview_test_correction(test_root,file_id,String::from("목적지 참조 미리보기"),target.clone())?;
+    Ok(DestinationResolution {status:"RESOLVED".into(),folder_id:Some(format!("folder:{id}")),destination_path:Some(target),matched_count:1,reason:"Index 폴더 참조 확인; 제안 저장·실행 없음".into()})
+}
+
 // Natural language is context only. An explicit structured destination is required and no move is called.
 #[tauri::command]
 pub fn preview_test_correction(test_root: String, file_id: String, user_correction: String, destination_path: String) -> Result<CorrectionPreview, String> {
@@ -448,7 +490,8 @@ pub fn dry_run_test_correction(test_root: String, stable_item_id: String) -> Res
 pub struct BatchDryRun {
     pub batch_id: String, pub actions: Vec<ActionDryRun>,
     pub validation_status: String, pub execution_status: String,
-    pub undo_status: String,
+    pub undo_status: String, pub undo_eligible_count: usize,
+    pub reverse_order: Vec<String>, pub verification_state: String,
 }
 
 #[tauri::command]
@@ -473,8 +516,21 @@ pub fn batch_dry_run_test_corrections(test_root: String, batch_id: String, stabl
     if actions.iter().filter_map(|a|a.destination_path.as_ref()).any(|destination|sources.contains(destination)) {
         return Err("Batch 안에서 목적지와 다른 원본이 충돌합니다".into());
     }
+    // Feed the exact dry-run actions through the pure undo journal model. No action has
+    // executed, so the reverse plan must stay empty regardless of the preview count.
+    let journal = actions.iter().enumerate().map(|(sequence,a)| crate::batch_undo::BatchActionRecord {
+        batch_id:batch_id.clone(),action_id:a.stable_item_id.clone(),sequence,
+        action_type:if a.action=="MOVE" {"MOVE".into()} else {"HOLD".into()},
+        source_before:a.source_path.clone(),destination_after:a.destination_path.clone().unwrap_or_default(),
+        source_snapshot:"NOT_CAPTURED_FOR_EXECUTION".into(),execution_result:"NOT_EXECUTED".into(),
+        verification_result:"NOT_APPLICABLE".into(),undo_state:"NOT_APPLICABLE".into(),
+        reverse_order:None,created_at:"DRY_RUN".into(),executed_at:None,
+    }).filter(|r|r.action_type=="MOVE").enumerate().map(|(sequence,mut r)| {r.sequence=sequence;r}).collect::<Vec<_>>();
+    let reverse = if journal.is_empty() {Vec::new()} else {crate::batch_undo::reverse_plan(&journal)?};
     Ok(BatchDryRun {batch_id,actions,validation_status:"DRY_RUN_PASS".into(),
-        execution_status:"NOT_EXECUTED".into(),undo_status:"NOT_APPLICABLE".into()})
+        execution_status:"NOT_EXECUTED".into(),undo_status:"NOT_APPLICABLE".into(),
+        undo_eligible_count:reverse.len(),reverse_order:reverse.into_iter().map(|r|r.action_id).collect(),
+        verification_state:"NOT_APPLICABLE".into()})
 }
 
 #[cfg(test)]
@@ -677,6 +733,33 @@ mod tests {
         assert!(dry_run_test_correction(root_str.clone(),format!("inbox:{file_id}")).is_err());
         assert!(source.exists());
         assert!(!destination.join("한글 설계.txt").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn destination_reference_requires_unique_indexed_folder_and_revalidates_target() {
+        let root = disposable("destination-resolution");
+        let root_str = root.to_string_lossy().into_owned();
+        crate::paths::bootstrap_test_root(&root_str,false).unwrap();
+        let fixtures = root.join("testdata");
+        let inbox = fixtures.join("Inbox");
+        let a = fixtures.join("A/설계");
+        let b = fixtures.join("B/설계");
+        std::fs::create_dir_all(&inbox).unwrap();
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(inbox.join("drawing.txt"),b"synthetic").unwrap();
+        scan_indexed_test_root(root_str.clone(),fixtures.to_string_lossy().into_owned()).unwrap();
+        let file_id=inbox.join("drawing.txt").to_string_lossy().into_owned();
+        assert_eq!(resolve_test_destination(root_str.clone(),file_id.clone(),"설계".into()).unwrap().status,"AMBIGUOUS");
+        assert_eq!(resolve_test_destination(root_str.clone(),file_id.clone(),"없음".into()).unwrap().status,"NOT_FOUND");
+        assert_eq!(resolve_test_destination(root_str.clone(),file_id.clone(),"../설계".into()).unwrap().status,"NOT_ALLOWED");
+        let id=format!("folder:{}",a.to_string_lossy());
+        let resolved=resolve_test_destination(root_str.clone(),file_id.clone(),id).unwrap();
+        assert_eq!(resolved.status,"RESOLVED");
+        assert_eq!(resolved.destination_path.as_deref(),Some(a.join("drawing.txt").to_string_lossy().as_ref()));
+        std::fs::write(a.join("drawing.txt"),b"conflict").unwrap();
+        assert!(resolve_test_destination(root_str.clone(),file_id,"설계".into()).unwrap().status=="AMBIGUOUS");
+        assert!(resolve_test_destination(root_str.clone(),inbox.join("drawing.txt").to_string_lossy().into_owned(),format!("folder:{}",a.display())).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 }
