@@ -61,9 +61,10 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
     if(!item)return;
     setBusy(true);setError("");setPreview(null);
     try{
+      const checked=decision==="MOVE"?await invoke<Preview>("preview_test_correction",{testRoot,fileId:item.fileId,userCorrection:correctionText,destinationPath:destination}):null;
       const imported=await invoke<Correction[]>("import_test_corrections",{testRoot,corrections:[{stableItemId:`inbox:${item.fileId}`,fileId:item.fileId,correctionRevision:revision,userCorrection:correctionText,normalizedAction:decision,sourcePath:item.currentPath,destinationPath:decision==="MOVE"?destination:null,snapshotSizeBytes:String(item.sizeBytes),snapshotModifiedNs:item.modifiedNsText}]});
       setCorrections(await invoke<Correction[]>("list_test_corrections",{testRoot}));
-      if(imported[0]?.normalizedAction==="MOVE")setPreview(await invoke<Preview>("preview_test_correction",{testRoot,fileId:item.fileId,userCorrection:correctionText,destinationPath:destination}));
+      if(imported[0]?.normalizedAction==="MOVE")setPreview(checked);
     }catch{setError("수정 제안이 거부되었습니다. 중복·경로 충돌·파일 변경 여부를 재확인하십시오. 파일 작업은 수행되지 않았습니다.")}
     finally{setBusy(false)}
   }
