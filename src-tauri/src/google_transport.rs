@@ -22,6 +22,26 @@ pub trait CandidateTransport {
     fn upsert_candidate(&mut self, row: &CandidateRow) -> Result<(), TransportError>;
 }
 
+pub struct CorrectionSnapshot {
+    pub complete: bool,
+    pub rows: Vec<crate::index_db::SheetCorrection>,
+}
+
+pub trait CorrectionTransport {
+    fn read_corrections(&mut self) -> Result<CorrectionSnapshot, TransportError>;
+}
+
+// The transport may only supply data. Existing SQLite transaction, live-file snapshot and
+// Test Root destination validation remain the sole import authority; no Move is called.
+pub fn import_test_corrections_from_transport<T: CorrectionTransport>(
+    transport: &mut T, test_root: String,
+) -> Result<Vec<crate::index_db::ImportedCorrection>, TransportError> {
+    let snapshot = transport.read_corrections()?;
+    if !snapshot.complete { return Err(TransportError::Malformed("partial Corrections response".into())); }
+    if snapshot.rows.is_empty() { return Ok(Vec::new()); }
+    crate::index_db::import_test_corrections(test_root,snapshot.rows).map_err(TransportError::Malformed)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InboxWireRow {
@@ -212,5 +232,21 @@ mod tests {
         assert_eq!(sync_candidates_transport(&mut fake,&[candidate.clone()]).unwrap().unchanged,1);
         fake.rows.push(candidate.clone());
         assert!(sync_candidates_transport(&mut fake,&[candidate]).is_err());
+    }
+    struct FakeCorrections { result:Result<CorrectionSnapshot,TransportError> }
+    impl CorrectionTransport for FakeCorrections {
+        fn read_corrections(&mut self)->Result<CorrectionSnapshot,TransportError>{
+            std::mem::replace(&mut self.result,Err(TransportError::Network))
+        }
+    }
+    #[test] fn incomplete_or_unauthenticated_corrections_never_reach_sqlite() {
+        let mut partial=FakeCorrections { result:Ok(CorrectionSnapshot {complete:false,rows:vec![]}) };
+        assert!(matches!(import_test_corrections_from_transport(&mut partial,"/nonexistent".into()),
+            Err(TransportError::Malformed(message)) if message=="partial Corrections response"));
+        let mut auth=FakeCorrections { result:Err(TransportError::AuthRequired) };
+        assert!(matches!(import_test_corrections_from_transport(&mut auth,"/nonexistent".into()),
+            Err(TransportError::AuthRequired)));
+        let mut empty=FakeCorrections { result:Ok(CorrectionSnapshot {complete:true,rows:vec![]}) };
+        assert!(import_test_corrections_from_transport(&mut empty,"/nonexistent".into()).unwrap().is_empty());
     }
 }
