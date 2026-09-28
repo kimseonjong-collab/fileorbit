@@ -11,6 +11,7 @@ type SyncReport={inserted:number;updated:number;unchanged:number;conflicts:strin
 type SyncPlan={report:SyncReport;rows:unknown[]};
 type ActionDryRun={stableItemId:string;action:string;sourcePath:string;destinationPath:string|null;validationStatus:string;expectedChange:string;undoPossible:boolean;executionStatus:string};
 type BatchDryRun={batchId:string;actions:ActionDryRun[];validationStatus:string;executionStatus:string;undoStatus:string};
+type NaturalIR={referencedItemIds:string[];action:string;destinationReference:string|null;status:string;requiresSafetyValidation:boolean;requiresExplicitApproval:boolean};
 
 export function IndexPanel({isWeb}:{isWeb:boolean}){
   const [appStatus,setAppStatus]=useState<Status|null>(null);
@@ -26,6 +27,8 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
   const [destination,setDestination]=useState("");
   const [decision,setDecision]=useState<"MOVE"|"HOLD">("HOLD");
   const [revision,setRevision]=useState("");
+  const [naturalText,setNaturalText]=useState("");
+  const [naturalIR,setNaturalIR]=useState<NaturalIR|null>(null);
   const [preview,setPreview]=useState<Preview|null>(null);
   const [inboxSync,setInboxSync]=useState<SyncReport|null>(null);
   const [candidateSync,setCandidateSync]=useState<SyncReport|null>(null);
@@ -97,6 +100,12 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
     }catch{setError("수정 제안이 거부되었습니다. 중복·경로 충돌·파일 변경 여부를 재확인하십시오. 파일 작업은 수행되지 않았습니다.")}
     finally{setBusy(false)}
   }
+  async function interpretCorrection(){
+    setBusy(true);setError("");setNaturalIR(null);
+    try{setNaturalIR(await invoke<NaturalIR>("parse_test_correction",{text:naturalText,selectedItemIds:[`inbox:${selectedId}`]}))}
+    catch{setError("문장 형식이 불명확합니다. 보류, 제외, 이동: <목적지> 중 하나로 입력하십시오. 저장·실행은 없었습니다.")}
+    finally{setBusy(false)}
+  }
   return <section className="panel" aria-label="로컬 SQLite Index">
     <div className="panelHead"><div><h3>로컬 Index · Test Root</h3><p>합성 테스트 폴더만 저장·조회합니다. 기존 정리 기능과 별도로 동작합니다.</p></div><span>{isWeb?"데스크톱 앱 전용":appStatus?`DB 연결 · schema v${appStatus.schemaVersion}`:"DB 확인 중"}</span></div>
     <h4>1 Observe · Index와 Inbox</h4>
@@ -121,6 +130,11 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
       <input aria-label="수정 설명" placeholder="수정 이유 또는 자연어 설명" value={correctionText} onChange={e=>setCorrectionText(e.target.value)}/>
       {decision==="MOVE"&&<input aria-label="제안 목적지" placeholder="Test Root/testdata 내부 목적지 절대 경로" value={destination} onChange={e=>setDestination(e.target.value)} style={{minWidth:280}}/>}
       <button disabled={busy||!correctionText.trim()||(decision==="MOVE"&&!destination.trim())} onClick={saveCorrection}>제안 저장·안전검증</button>
+    </div>}
+    {!isWeb&&selectedId&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      <input aria-label="제한된 자연어 수정" placeholder="보류 / 제외 / 이동: <목적지>" value={naturalText} onChange={e=>{setNaturalText(e.target.value);setNaturalIR(null)}}/>
+      <button disabled={busy||!naturalText.trim()} onClick={interpretCorrection}>문장 해석 미리보기</button>
+      {naturalIR&&<p>{naturalIR.action} · {naturalIR.destinationReference??"목적지 없음"} · {naturalIR.status} · 별도 안전검증·명시적 승인 필요 · 저장·실행 안 함</p>}
     </div>}
     <h4>4 Execute · Dry-run</h4>
     <p>{preview?`${preview.sourcePath} → ${preview.destinationPath} · ${preview.validationStatus} · ${preview.dryRunStatus}`:"실행 전용 버튼 없음 · Test Root 제안만 검증"}</p>
