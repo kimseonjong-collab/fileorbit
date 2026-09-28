@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
-use crate::workspace_sync::{MemorySheet, ReviewRow, SyncReport, sync_inbox};
+use crate::workspace_sync::{CandidateRow, MemorySheet, ReviewRow, SyncReport, plan_candidates, sync_inbox};
 
 pub const INBOX_TAB: &str = "Inbox_Review";
 pub const CANDIDATES_TAB: &str = "Candidates";
@@ -15,6 +15,11 @@ pub trait ReviewTransport {
     fn read_inbox(&mut self) -> Result<Vec<ReviewRow>, TransportError>;
     fn insert_inbox(&mut self, row: &ReviewRow) -> Result<(), TransportError>;
     fn update_owned_inbox(&mut self, row: &ReviewRow) -> Result<(), TransportError>;
+}
+
+pub trait CandidateTransport {
+    fn read_candidates(&mut self) -> Result<Vec<CandidateRow>, TransportError>;
+    fn upsert_candidate(&mut self, row: &CandidateRow) -> Result<(), TransportError>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +109,46 @@ pub fn sync_inbox_transport<T: ReviewTransport>(transport: &mut T, local: &[Revi
     Ok(report)
 }
 
+pub fn sync_candidates_transport<T: CandidateTransport>(transport: &mut T, local: &[CandidateRow]) -> Result<SyncReport, TransportError> {
+    let remote = candidate_snapshot(transport)?;
+    let (report, planned) = plan_candidates(local,&remote).map_err(TransportError::Malformed)?;
+    let previous: HashMap<_,_> = remote.iter().map(|r|(r.candidate_id.clone(),r.clone())).collect();
+    for desired in planned.iter().filter(|r| previous.get(&r.candidate_id) != Some(*r)) {
+        let original = previous.get(&desired.candidate_id);
+        let mut applied = false;
+        for attempt in 0..3 {
+            let now = candidate_snapshot(transport)?;
+            let mut ids = HashMap::new();
+            for item in now {
+                if ids.insert(item.candidate_id.clone(),item).is_some() { return Err(TransportError::RemoteConflict); }
+            }
+            match ids.get(&desired.candidate_id) {
+                Some(current) if current == desired => { applied=true; break; }
+                Some(current) if Some(current) != original => return Err(TransportError::RemoteConflict),
+                None if original.is_some() => return Err(TransportError::RemoteConflict),
+                _ => {}
+            }
+            match transport.upsert_candidate(desired) {
+                Ok(()) => { applied=true; break; }
+                Err(TransportError::Network) if attempt < 2 => continue,
+                Err(e) => return Err(e),
+            }
+        }
+        if !applied { return Err(TransportError::Network); }
+    }
+    Ok(report)
+}
+
+fn candidate_snapshot<T: CandidateTransport>(transport: &mut T) -> Result<Vec<CandidateRow>,TransportError> {
+    for attempt in 0..3 {
+        match transport.read_candidates() {
+            Err(TransportError::Network) if attempt < 2 => continue,
+            other => return other,
+        }
+    }
+    unreachable!()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,5 +189,28 @@ mod tests {
         let original=row("한글"); let wire=InboxWireRow::from(&original);
         assert_eq!(wire.modified_ns_utc,"1");
         assert_eq!(ReviewRow::try_from(wire).unwrap(),original);
+    }
+    #[derive(Default)]
+    struct FakeCandidates { rows:Vec<CandidateRow>, fail_after_upsert:bool }
+    impl CandidateTransport for FakeCandidates {
+        fn read_candidates(&mut self)->Result<Vec<CandidateRow>,TransportError>{Ok(self.rows.clone())}
+        fn upsert_candidate(&mut self,row:&CandidateRow)->Result<(),TransportError>{
+            if let Some(saved)=self.rows.iter_mut().find(|r|r.candidate_id==row.candidate_id){*saved=row.clone()}
+            else {self.rows.push(row.clone())}
+            if std::mem::take(&mut self.fail_after_upsert){Err(TransportError::Network)}else{Ok(())}
+        }
+    }
+    #[test] fn candidate_retry_is_idempotent_and_evidence_is_separate() {
+        let candidate=CandidateRow {stable_item_id:"inbox:a".into(),file_id:"a".into(),
+            candidate_id:"candidate:a:folder:/testdata/설계".into(),candidate_type:"folder".into(),
+            candidate_path:"/testdata/설계".into(),score_basis_points:7500,evidence:"공통 프로젝트".into()};
+        let mut fake=FakeCandidates {fail_after_upsert:true,..Default::default()};
+        assert_eq!(sync_candidates_transport(&mut fake,&[candidate.clone()]).unwrap().inserted,1);
+        assert_eq!(fake.rows.len(),1);
+        assert_eq!(fake.rows[0].score_basis_points,7500);
+        assert_eq!(fake.rows[0].evidence,"공통 프로젝트");
+        assert_eq!(sync_candidates_transport(&mut fake,&[candidate.clone()]).unwrap().unchanged,1);
+        fake.rows.push(candidate.clone());
+        assert!(sync_candidates_transport(&mut fake,&[candidate]).is_err());
     }
 }
