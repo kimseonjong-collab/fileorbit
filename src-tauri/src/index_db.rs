@@ -391,6 +391,45 @@ pub fn list_test_corrections(test_root: String) -> Result<Vec<ImportedCorrection
     rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionDryRun {
+    pub stable_item_id: String, pub action: String, pub source_path: String,
+    pub destination_path: Option<String>, pub validation_status: String,
+    pub expected_change: String, pub undo_possible: bool,
+    pub execution_status: String,
+}
+
+// Reuse the correction import's full live snapshot/path validation for the proposal. Reimporting
+// an identical revision is idempotent. This command never calls the Move executor.
+#[tauri::command]
+pub fn dry_run_test_correction(test_root: String, stable_item_id: String) -> Result<ActionDryRun, String> {
+    let db = test_database(&test_root)?;
+    let row: SheetCorrection = db.query_row(
+        "SELECT stable_item_id,file_id,correction_revision,user_correction,normalized_action,source_path,destination_path,snapshot_size_bytes,snapshot_modified_ns FROM workspace_corrections WHERE stable_item_id=?1",
+        [&stable_item_id], |r| Ok(SheetCorrection {
+            stable_item_id:r.get(0)?,file_id:r.get(1)?,correction_revision:r.get(2)?,
+            user_correction:r.get(3)?,normalized_action:r.get(4)?,source_path:r.get(5)?,
+            destination_path:r.get(6)?,snapshot_size_bytes:r.get::<_,i64>(7)?.to_string(),
+            snapshot_modified_ns:r.get::<_,i64>(8)?.to_string(),
+        })
+    ).map_err(|_|"저장된 수정 제안을 찾을 수 없습니다".to_string())?;
+    drop(db);
+    import_test_corrections(test_root.clone(),vec![row.clone()])?;
+    if row.normalized_action == "MOVE" {
+        let target = row.destination_path.clone().ok_or("MOVE 목적지 없음")?;
+        let preview = preview_test_correction(test_root,row.file_id,row.user_correction,target)?;
+        Ok(ActionDryRun {stable_item_id,action:"MOVE".into(),source_path:preview.source_path,
+            destination_path:Some(preview.destination_path),validation_status:"validated_test_root".into(),
+            expected_change:"원본 1개를 목적지로 이동하는 제안; 실제 변경 0건".into(),
+            undo_possible:true,execution_status:"NOT_EXECUTED".into()})
+    } else {
+        Ok(ActionDryRun {stable_item_id,action:"HOLD".into(),source_path:row.source_path,
+            destination_path:None,validation_status:"validated_test_root".into(),
+            expected_change:"파일 변경 없음".into(),undo_possible:false,execution_status:"NOT_EXECUTED".into()})
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -573,12 +612,18 @@ mod tests {
         assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM workspace_corrections",[],|r|r.get::<_,i64>(0)).unwrap(),0);
         assert_eq!(import_test_corrections(root_str.clone(),vec![row.clone()]).unwrap()[0].status,"imported");
         assert_eq!(list_test_corrections(root_str.clone()).unwrap().len(),1);
+        let dry_run = dry_run_test_correction(root_str.clone(),row.stable_item_id.clone()).unwrap();
+        assert_eq!(dry_run.execution_status,"NOT_EXECUTED");
+        assert!(dry_run.undo_possible);
+        assert!(source.exists());
+        assert!(!destination.join("한글 설계.txt").exists());
         assert_eq!(import_test_corrections(root_str.clone(),vec![row.clone()]).unwrap().len(),1);
         let mut conflicting = row.clone(); conflicting.correction_revision = "rev-2".into();
         assert!(import_test_corrections(root_str.clone(),vec![conflicting]).is_err());
         assert_eq!(test_database(&root_str).unwrap().query_row("SELECT count(*) FROM workspace_corrections",[],|r|r.get::<_,i64>(0)).unwrap(),1);
         std::fs::write(&source,b"changed synthetic").unwrap();
         assert!(import_test_corrections(root_str.clone(),vec![row]).is_err());
+        assert!(dry_run_test_correction(root_str.clone(),format!("inbox:{file_id}")).is_err());
         assert!(source.exists());
         assert!(!destination.join("한글 설계.txt").exists());
         std::fs::remove_dir_all(root).unwrap();

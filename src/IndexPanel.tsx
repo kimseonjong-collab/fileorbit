@@ -9,6 +9,7 @@ type Correction={stableItemId:string;fileId:string;normalizedAction:string;sourc
 type Preview={sourcePath:string;destinationPath:string;validationStatus:string;dryRunStatus:string};
 type SyncReport={inserted:number;updated:number;unchanged:number;conflicts:string[]};
 type SyncPlan={report:SyncReport;rows:unknown[]};
+type ActionDryRun={stableItemId:string;action:string;sourcePath:string;destinationPath:string|null;validationStatus:string;expectedChange:string;undoPossible:boolean;executionStatus:string};
 
 export function IndexPanel({isWeb}:{isWeb:boolean}){
   const [appStatus,setAppStatus]=useState<Status|null>(null);
@@ -27,6 +28,7 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
   const [preview,setPreview]=useState<Preview|null>(null);
   const [inboxSync,setInboxSync]=useState<SyncReport|null>(null);
   const [candidateSync,setCandidateSync]=useState<SyncReport|null>(null);
+  const [actionDryRun,setActionDryRun]=useState<ActionDryRun|null>(null);
   const [error,setError]=useState("");
   const [busy,setBusy]=useState(false);
   useEffect(()=>{if(!isWeb)invoke<Status>("app_index_status").then(setAppStatus).catch(()=>setError("로컬 Index 연결 상태를 확인할 수 없습니다."))},[isWeb]);
@@ -69,6 +71,12 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
     catch{setError("Test Root Workspace 계획을 계산할 수 없습니다. Google 전송은 실행되지 않았습니다.")}
     finally{setBusy(false)}
   }
+  async function dryRunCorrection(stableItemId:string){
+    setBusy(true);setError("");setActionDryRun(null);
+    try{setActionDryRun(await invoke<ActionDryRun>("dry_run_test_correction",{testRoot,stableItemId}))}
+    catch{setError("원본 상태 또는 목적지가 저장 시점과 달라 Dry-run을 중단했습니다. 다시 스캔·검토하십시오.")}
+    finally{setBusy(false)}
+  }
   async function saveCorrection(){
     const item=inbox.find(r=>r.fileId===selectedId);
     if(!item)return;
@@ -108,8 +116,9 @@ export function IndexPanel({isWeb}:{isWeb:boolean}){
     </div>}
     <h4>4 Execute · Dry-run</h4>
     <p>{preview?`${preview.sourcePath} → ${preview.destinationPath} · ${preview.validationStatus} · ${preview.dryRunStatus}`:"실행 전용 버튼 없음 · Test Root 제안만 검증"}</p>
+    {actionDryRun&&<p>재검증 {actionDryRun.action} · {actionDryRun.validationStatus} · {actionDryRun.expectedChange} · Undo 가능 {actionDryRun.undoPossible?"예":"아니오"} · {actionDryRun.executionStatus}</p>}
     <h4>5 Verify / Undo · 기록</h4>
-    {corrections.length>0?<div>{corrections.map(c=><div key={c.stableItemId}>{c.normalizedAction} · {c.status} · {c.sourcePath}{c.destinationPath?` → ${c.destinationPath}`:""} · 실제 실행 없음</div>)}</div>:<p>실행·Undo 기록 없음</p>}
+    {corrections.length>0?<div>{corrections.map(c=><div key={c.stableItemId}>{c.normalizedAction} · {c.status} · {c.sourcePath}{c.destinationPath?` → ${c.destinationPath}`:""} · 실제 실행 없음 <button disabled={busy} onClick={()=>dryRunCorrection(c.stableItemId)}>저장 제안 Dry-run 재검증</button></div>)}</div>:<p>실행·Undo 기록 없음</p>}
     {error&&<p role="alert">{error}</p>}
   </section>
 }
