@@ -749,17 +749,21 @@ mod tests {
         std::fs::create_dir_all(&b).unwrap();
         std::fs::write(inbox.join("drawing.txt"),b"synthetic").unwrap();
         scan_indexed_test_root(root_str.clone(),fixtures.to_string_lossy().into_owned()).unwrap();
-        let file_id=inbox.join("drawing.txt").to_string_lossy().into_owned();
+        let db=test_database(&root_str).unwrap();
+        let file_id: String=db.query_row("SELECT id FROM files WHERE name='drawing.txt'",[],|r|r.get(0)).unwrap();
+        let folder_id: String=db.query_row("SELECT id FROM folders WHERE name='설계' ORDER BY id LIMIT 1",[],|r|r.get(0)).unwrap();
+        drop(db);
         assert_eq!(resolve_test_destination(root_str.clone(),file_id.clone(),"설계".into()).unwrap().status,"AMBIGUOUS");
         assert_eq!(resolve_test_destination(root_str.clone(),file_id.clone(),"없음".into()).unwrap().status,"NOT_FOUND");
         assert_eq!(resolve_test_destination(root_str.clone(),file_id.clone(),"../설계".into()).unwrap().status,"NOT_ALLOWED");
-        let id=format!("folder:{}",a.to_string_lossy());
+        let id=format!("folder:{folder_id}");
         let resolved=resolve_test_destination(root_str.clone(),file_id.clone(),id).unwrap();
         assert_eq!(resolved.status,"RESOLVED");
-        assert_eq!(resolved.destination_path.as_deref(),Some(a.join("drawing.txt").to_string_lossy().as_ref()));
-        std::fs::write(a.join("drawing.txt"),b"conflict").unwrap();
+        assert!(resolved.destination_path.as_deref().unwrap().ends_with("drawing.txt"));
+        std::fs::write(resolved.destination_path.as_deref().unwrap(),b"conflict").unwrap();
         assert!(resolve_test_destination(root_str.clone(),file_id,"설계".into()).unwrap().status=="AMBIGUOUS");
-        assert!(resolve_test_destination(root_str.clone(),inbox.join("drawing.txt").to_string_lossy().into_owned(),format!("folder:{}",a.display())).is_err());
+        let file_id: String=test_database(&root_str).unwrap().query_row("SELECT id FROM files WHERE name='drawing.txt'",[],|r|r.get(0)).unwrap();
+        assert!(resolve_test_destination(root_str.clone(),file_id,format!("folder:{folder_id}")).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 }
