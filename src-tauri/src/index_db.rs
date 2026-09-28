@@ -430,6 +430,40 @@ pub fn dry_run_test_correction(test_root: String, stable_item_id: String) -> Res
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchDryRun {
+    pub batch_id: String, pub actions: Vec<ActionDryRun>,
+    pub validation_status: String, pub execution_status: String,
+    pub undo_status: String,
+}
+
+#[tauri::command]
+pub fn batch_dry_run_test_corrections(test_root: String, batch_id: String, stable_item_ids: Vec<String>) -> Result<BatchDryRun, String> {
+    if batch_id.trim().is_empty() || batch_id.len() > 100 || stable_item_ids.is_empty() || stable_item_ids.len() > 100 {
+        return Err("Batch ID 또는 제안 개수 제한 위반".into());
+    }
+    let mut ids = std::collections::HashSet::new();
+    let mut sources = std::collections::HashSet::new();
+    let mut targets = std::collections::HashSet::new();
+    let mut actions = Vec::with_capacity(stable_item_ids.len());
+    for id in stable_item_ids {
+        if !ids.insert(id.clone()) { return Err("Batch 중복 제안 ID".into()); }
+        let action = dry_run_test_correction(test_root.clone(),id)?;
+        if action.action == "MOVE" {
+            if !sources.insert(action.source_path.clone()) { return Err("Batch 중복 원본".into()); }
+            let destination = action.destination_path.as_ref().ok_or("Batch 목적지 없음")?;
+            if !targets.insert(crate::windows_target_identity(Path::new(destination))) { return Err("Batch 중복 목적지".into()); }
+        }
+        actions.push(action);
+    }
+    if actions.iter().filter_map(|a|a.destination_path.as_ref()).any(|destination|sources.contains(destination)) {
+        return Err("Batch 안에서 목적지와 다른 원본이 충돌합니다".into());
+    }
+    Ok(BatchDryRun {batch_id,actions,validation_status:"DRY_RUN_PASS".into(),
+        execution_status:"NOT_EXECUTED".into(),undo_status:"NOT_APPLICABLE".into()})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -615,6 +649,10 @@ mod tests {
         let dry_run = dry_run_test_correction(root_str.clone(),row.stable_item_id.clone()).unwrap();
         assert_eq!(dry_run.execution_status,"NOT_EXECUTED");
         assert!(dry_run.undo_possible);
+        let batch=batch_dry_run_test_corrections(root_str.clone(),"synthetic-batch".into(),vec![row.stable_item_id.clone()]).unwrap();
+        assert_eq!(batch.actions.len(),1);
+        assert_eq!(batch.execution_status,"NOT_EXECUTED");
+        assert!(batch_dry_run_test_corrections(root_str.clone(),"duplicate".into(),vec![row.stable_item_id.clone(),row.stable_item_id.clone()]).is_err());
         assert!(source.exists());
         assert!(!destination.join("한글 설계.txt").exists());
         assert_eq!(import_test_corrections(root_str.clone(),vec![row.clone()]).unwrap().len(),1);
