@@ -1,6 +1,7 @@
 mod paths;
 mod index_db;
 mod workspace_sync;
+mod google_transport;
 use serde::{Deserialize,Serialize};use std::{collections::{HashMap,HashSet},fs::OpenOptions,io::Write,path::{Component,Path},sync::Mutex,time::{SystemTime,UNIX_EPOCH}};use tauri::Manager;use walkdir::WalkDir;
 #[derive(Serialize,Clone)]#[serde(rename_all="camelCase")]struct FolderStat{path:String,name:String,file_count:u64,total_bytes:u64,extensions:HashMap<String,u64>,recent_modified:Option<u64>,representative_files:Vec<String>,keywords:Vec<String>}
 #[derive(Serialize)]#[serde(rename_all="camelCase")]struct DownloadFile{name:String,path:String,size:u64,modified:Option<u64>}
