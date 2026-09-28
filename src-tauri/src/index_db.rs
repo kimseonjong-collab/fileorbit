@@ -336,13 +336,12 @@ pub struct ImportedCorrection {
     pub source_path: String, pub destination_path: Option<String>, pub status: String,
 }
 
-#[tauri::command]
-pub fn import_test_corrections(test_root: String, corrections: Vec<SheetCorrection>) -> Result<Vec<ImportedCorrection>, String> {
-    if corrections.is_empty() || corrections.len() > 1000 { return Err("수정 행은 1~1000개만 허용합니다".into()); }
-    let mut db = test_database(&test_root)?;
+// Shared, read-only safety gate for import, single dry-run and batch dry-run.
+// It is deliberately scoped to disposable Test Root data and returns no executable capability.
+fn validate_correction_rows(db: &Connection, test_root: &str, corrections: &[SheetCorrection]) -> Result<Vec<Option<String>>, String> {
     let mut ids = std::collections::HashSet::new();
-    let mut validated = Vec::with_capacity(corrections.len());
-    for row in &corrections {
+    let mut destinations = Vec::with_capacity(corrections.len());
+    for row in corrections {
         if !ids.insert(&row.stable_item_id) { return Err("중복 수정 item ID".into()); }
         if row.stable_item_id != format!("inbox:{}",row.file_id) || row.correction_revision.trim().is_empty() || row.user_correction.trim().is_empty() {
             return Err("수정 ID, revision 또는 내용이 비어 있거나 일치하지 않습니다".into());
@@ -354,20 +353,33 @@ pub fn import_test_corrections(test_root: String, corrections: Vec<SheetCorrecti
         if state != "present" || path != row.source_path || size != expected_size || modified != expected_modified { return Err("Sheet 수정이 현재 SQLite Index와 충돌합니다. 재검토가 필요합니다".into()); }
         let source = Path::new(&path);
         let live = source.symlink_metadata().map_err(|_|"원본 파일이 없습니다".to_string())?;
-        let fixture = Path::new(&crate::paths::bootstrap_test_root(&test_root,true)?.root).join("testdata").canonicalize().map_err(|e|e.to_string())?;
+        let fixture = Path::new(&crate::paths::bootstrap_test_root(test_root,true)?.root).join("testdata").canonicalize().map_err(|e|e.to_string())?;
         if !live.file_type().is_file() || !source.canonicalize().map_err(|e|e.to_string())?.starts_with(&fixture)
             || live.len() as i64 != size || ns(live.modified()) != modified { return Err("원본 파일이 스캔 이후 변경되었거나 Test Root를 벗어났습니다".into()); }
         let destination = if row.normalized_action == "MOVE" {
             let target = row.destination_path.as_deref().filter(|s|!s.trim().is_empty()).ok_or("MOVE 목적지 없음")?;
-            let preview = preview_test_correction(test_root.clone(),row.file_id.clone(),row.user_correction.clone(),target.into())?;
+            let preview = preview_test_correction(test_root.into(),row.file_id.clone(),row.user_correction.clone(),target.into())?;
             if preview.destination_path == path { return Err("원본과 목적지가 같습니다".into()); }
             Some(preview.destination_path)
         } else {
             if row.destination_path.as_deref().is_some_and(|s|!s.trim().is_empty()) { return Err("HOLD에는 목적지를 지정할 수 없습니다".into()); }
             None
         };
-        validated.push((row.clone(),destination,size,modified));
+        destinations.push(destination);
     }
+    Ok(destinations)
+}
+
+#[tauri::command]
+pub fn import_test_corrections(test_root: String, corrections: Vec<SheetCorrection>) -> Result<Vec<ImportedCorrection>, String> {
+    if corrections.is_empty() || corrections.len() > 1000 { return Err("수정 행은 1~1000개만 허용합니다".into()); }
+    let mut db = test_database(&test_root)?;
+    let destinations = validate_correction_rows(&db, &test_root, &corrections)?;
+    let validated = corrections.into_iter().zip(destinations).map(|(row,destination)| {
+        let size = row.snapshot_size_bytes.parse::<i64>().expect("validated size");
+        let modified = row.snapshot_modified_ns.parse::<i64>().expect("validated timestamp");
+        (row,destination,size,modified)
+    }).collect::<Vec<_>>();
     let tx = db.transaction().map_err(|e|format!("수정 import transaction 실패: {e}"))?;
     let mut result = Vec::new();
     for (row,destination,size,modified) in validated {
@@ -414,8 +426,9 @@ pub fn dry_run_test_correction(test_root: String, stable_item_id: String) -> Res
             snapshot_modified_ns:r.get::<_,i64>(8)?.to_string(),
         })
     ).map_err(|_|"저장된 수정 제안을 찾을 수 없습니다".to_string())?;
+    validate_correction_rows(&db, &test_root, std::slice::from_ref(&row))?;
+    // A stored proposal must still match its original revision and data; dry-run is read-only.
     drop(db);
-    import_test_corrections(test_root.clone(),vec![row.clone()])?;
     if row.normalized_action == "MOVE" {
         let target = row.destination_path.clone().ok_or("MOVE 목적지 없음")?;
         let preview = preview_test_correction(test_root,row.file_id,row.user_correction,target)?;
