@@ -166,6 +166,8 @@ mod fileorbit {
             if item.expected_size.is_none() || item.expected_modified.is_none() {
                 return err(op, "BAD_REQUEST", "expected_size and expected_modified required (source snapshot)");
             }
+            // (0) approval record must exist, be human, cover this op and be unused (replay -> APPROVAL_ALREADY_USED)
+            let (approval_id, rec) = match approval(v, op, cfg) { Ok(a) => a, Err(e) => return e };
             // (1) folder allowlist (security boundary, unchanged from N6-A)
             if !within(Path::new(&download_root), &cfg.source_roots) || !within(Path::new(&approved_root), &cfg.approved_roots)
                 || !within(Path::new(&item.source), &cfg.source_roots)
@@ -173,7 +175,6 @@ mod fileorbit {
                 return err(op, "ROOT_NOT_ALLOWED", "source/destination outside execution folder allowlist");
             }
             // (2) exact-file approval binding
-            let (approval_id, rec) = match approval(v, op, cfg) { Ok(a) => a, Err(e) => return e };
             let mut bad = vec![];
             if file_ident(Path::new(&item.source)).is_none()
                 || file_ident(Path::new(&item.source)) != rec["source"].as_str().and_then(|x| file_ident(Path::new(x))) {
