@@ -1,0 +1,51 @@
+name: Nexus execution bridge (N6-A)
+# Builds ONLY examples/execution_bridge.exe (contract fileorbit-execution/1). No MSI/NSIS, no release, no installer.
+on:
+  push:
+    branches: [nexus/execution-bridge-n6a]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nexus-execution-bridge-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  execution-bridge:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: src-tauri
+      - name: Guard lib.rs unchanged from RC2
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin tag v0.5.0-rc.2
+          test "$(git rev-parse v0.5.0-rc.2:src-tauri/src/lib.rs)" = "$(git rev-parse HEAD:src-tauri/src/lib.rs)"
+      - name: Focused execution bridge tests only
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --example execution_bridge -- exec_
+      - name: Focused existing FileOrbit Safe Move / Undo safety tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib -- safe_move undo_precheck validate_move_plan execution_ source_snapshot move_with_audit undo_structure
+      - name: Build execution bridge example only
+        run: cargo build --locked --release --manifest-path src-tauri/Cargo.toml --example execution_bridge
+      - name: Smoke (no config fails closed)
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $exe = "src-tauri/target/release/examples/execution_bridge.exe"
+          $out = '{"contract":"fileorbit-execution/1","op":"status"}' | & $exe
+          $code = $LASTEXITCODE
+          Write-Host "status (no config) exit=$code $out"
+          if ($code -ne 2 -or ($out | ConvertFrom-Json).error -ne "CONFIG_MISSING") { throw "not fail-closed without config" }
+          (Get-FileHash $exe -Algorithm SHA256).Hash | Out-File src-tauri/target/release/examples/execution_bridge.exe.sha256
+          $global:LASTEXITCODE = 0
+          exit 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fileorbit-execution-bridge-n6a-windows
+          path: |
+            src-tauri/target/release/examples/execution_bridge.exe
+            src-tauri/target/release/examples/execution_bridge.exe.sha256
+          if-no-files-found: error
+          retention-days: 14
