@@ -30,12 +30,21 @@ jobs:
       - name: Bridge smoke (empty allowlist fails closed)
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $false
           $exe = "src-tauri/target/release/examples/readonly_bridge.exe"
-          $s = '{"contract":"fileorbit-readonly/1","op":"status"}' | & $exe | ConvertFrom-Json
-          if (-not $s.ok -or $s.result.ops.Count -ne 4) { throw "status failed" }
-          $r = '{"contract":"fileorbit-readonly/1","op":"scan","root":"C:\\"}' | & $exe | ConvertFrom-Json
-          if ($r.error -ne "ROOT_NOT_ALLOWED") { throw "allowlist not fail-closed" }
+          $out = '{"contract":"fileorbit-readonly/1","op":"status"}' | & $exe
+          $code = $LASTEXITCODE
+          Write-Host "status exit=$code $out"
+          $s = $out | ConvertFrom-Json
+          if ($code -ne 0 -or -not $s.ok -or $s.result.ops.Count -ne 4) { throw "status failed" }
+          $out = '{"contract":"fileorbit-readonly/1","op":"scan","root":"C:\\"}' | & $exe
+          $code = $LASTEXITCODE
+          Write-Host "scan C:\ exit=$code $out"
+          $r = $out | ConvertFrom-Json
+          if ($code -ne 2 -or $r.error -ne "ROOT_NOT_ALLOWED") { throw "allowlist not fail-closed" }
           (Get-FileHash $exe -Algorithm SHA256).Hash | Out-File src-tauri/target/release/examples/readonly_bridge.exe.sha256
+          $global:LASTEXITCODE = 0
+          exit 0
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: fileorbit-readonly-bridge-windows
