@@ -1,0 +1,46 @@
+name: Nexus read-only bridge
+# Builds ONLY examples/readonly_bridge.exe for KSJ Nexus N4. No MSI/NSIS, no release, no installer, no frontend.
+on:
+  push:
+    branches: [nexus/readonly-bridge]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nexus-readonly-bridge-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  bridge:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: src-tauri
+      - name: Guard lib.rs unchanged from RC2
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin tag v0.5.0-rc.2
+          test "$(git rev-parse v0.5.0-rc.2:src-tauri/src/lib.rs)" = "$(git rev-parse HEAD:src-tauri/src/lib.rs)"
+      - name: Focused bridge tests only
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --example readonly_bridge -- bridge_
+      - name: Build bridge example only
+        run: cargo build --locked --release --manifest-path src-tauri/Cargo.toml --example readonly_bridge
+      - name: Bridge smoke (empty allowlist fails closed)
+        shell: pwsh
+        run: |
+          $exe = "src-tauri/target/release/examples/readonly_bridge.exe"
+          $s = '{"contract":"fileorbit-readonly/1","op":"status"}' | & $exe | ConvertFrom-Json
+          if (-not $s.ok -or $s.result.ops.Count -ne 4) { throw "status failed" }
+          $r = '{"contract":"fileorbit-readonly/1","op":"scan","root":"C:\\"}' | & $exe | ConvertFrom-Json
+          if ($r.error -ne "ROOT_NOT_ALLOWED") { throw "allowlist not fail-closed" }
+          (Get-FileHash $exe -Algorithm SHA256).Hash | Out-File src-tauri/target/release/examples/readonly_bridge.exe.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fileorbit-readonly-bridge-windows
+          path: |
+            src-tauri/target/release/examples/readonly_bridge.exe
+            src-tauri/target/release/examples/readonly_bridge.exe.sha256
+          if-no-files-found: error
+          retention-days: 14
